@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+/* Fontes carregadas no index.html: Space Grotesk (claro) e Bricolage Grotesque (escuro) */
+
+/* ─────────────────────────────────────────────────────────────
+   Tema escuro — "Noite azul"
+   Azul de madrugada, âmbar reservado para a carga.
+   ───────────────────────────────────────────────────────────── */
+:root,
+.theme-noite {
+  --bg:            #0B0F1A;
+  --surface:       #131926;
+  --surface-2:     #1A2130;
+  --surface-3:     #212938;
+
+  --border:        #1F2836;
+  --border-strong: #2C3849;
+
+  --text:          #E6EAF2;
+  --text-2:        #8792A6;
+  --text-3:        #4C596E;
+
+  /* Acento principal */
+  --accent:        #6E8FF7;
+  --accent-hover:  #85A1FF;
+  --accent-soft:   rgba(110, 143, 247, 0.12);
+  --accent-line:   rgba(110, 143, 247, 0.28);
+  --on-accent:     #0B0F1A;
+
+  /* Carga / progressão — âmbar só no escuro */
+  --load:          #E0A458;
+  --load-soft:     rgba(224, 164, 88, 0.12);
+
+  /* Botão primário */
+  --btn-bg:        #6E8FF7;
+  --btn-fg:        #0B0F1A;
+  --btn-bg-hover:  #85A1FF;
+
+  --danger:        #F2555A;
+  --danger-soft:   rgba(242, 85, 90, 0.12);
+  --success:       #6E8FF7;
+
+  --font-display:  'Bricolage Grotesque', 'Inter', system-ui, sans-serif;
+  --font-body:     'Inter', system-ui, sans-serif;
+  --font-mono:     'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Tema claro — "Cal e limão"
+   Quase branco, tinta preta, limão só onde há progresso.
+   ───────────────────────────────────────────────────────────── */
+.theme-cal {
+  --bg:            #F2F1EC;
+  --surface:       #FFFFFF;
+  --surface-2:     #F7F6F1;
+  --surface-3:     #EDEBE3;
+
+  --border:        #E3E1D8;
+  --border-strong: #CFCCC0;
+
+  --text:          #14140F;
+  --text-2:        #6B6A5E;
+  --text-3:        #A5A398;
+
+  --accent:        #7E9204;
+  --accent-hover:  #6B7D03;
+  --accent-soft:   rgba(126, 146, 4, 0.12);
+  --accent-line:   rgba(126, 146, 4, 0.3);
+  --on-accent:     #FFFFFF;
+
+  /* No claro a carga usa o mesmo limão */
+  --load:          #7E9204;
+  --load-soft:     rgba(126, 146, 4, 0.12);
+
+  /* Botão primário é tinta preta */
+  --btn-bg:        #14140F;
+  --btn-fg:        #FFFFFF;
+  --btn-bg-hover:  #2A2A22;
+
+  --danger:        #C0362C;
+  --danger-soft:   rgba(192, 54, 44, 0.1);
+  --success:       #7E9204;
+
+  --font-display:  'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-body:     'Inter', system-ui, sans-serif;
+  --font-mono:     'JetBrains Mono', ui-monospace, monospace;
+}
+
+html, body, #root {
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-body);
+  transition: background-color 220ms ease, color 220ms ease;
+}
+
+/* Títulos e números grandes usam o display do tema */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+/* Rótulos pequenos em caixa alta */
+.label-xs {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type=number] { -moz-appearance: textfield; }
+
+/* Placeholder segue o tema */
+input::placeholder, textarea::placeholder { color: var(--text-3); }
+
+::-webkit-scrollbar { width: 0; height: 0; }

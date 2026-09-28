@@ -1,0 +1,21 @@
+{
+  "name": "Kronos",
+  "short_name": "Kronos",
+  "description": "SquadFit - Treinos em equipe",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    {
+      "src": "/kronos-icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/kronos-icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
