@@ -1,0 +1,59 @@
+import org.apache.tools.ant.taskdefs.condition.Os
+
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.kronos.app'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.kronos.app'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '0.1.0-beta'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // Servidor HTTP pequeno que roda o backend dentro do app
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
+}
+
+// Gera o frontend React (pasta raiz do projeto) dentro de src/main/assets/www.
+// Só roda de novo quando algum arquivo do frontend mudou.
+def frontendDir = rootProject.file('..')
+
+tasks.register('buildFrontend', Exec) {
+    description = 'Compila o frontend React para dentro do app'
+    workingDir frontendDir
+    commandLine Os.isFamily(Os.FAMILY_WINDOWS)
+        ? ['cmd', '/c', 'npm', 'run', 'build:android']
+        : ['npm', 'run', 'build:android']
+
+    inputs.dir(new File(frontendDir, 'src'))
+    inputs.dir(new File(frontendDir, 'public'))
+    inputs.files(
+        new File(frontendDir, 'index.html'),
+        new File(frontendDir, 'vite.config.ts'),
+        new File(frontendDir, 'package.json')
+    )
+    outputs.dir('src/main/assets/www')
+}
+
+tasks.named('preBuild') {
+    dependsOn 'buildFrontend'
+}

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mesmo fundo do tema "Noite azul" do frontend, para não piscar branco ao abrir -->
+    <style name="Theme.Kronos" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/kronos_bg</item>
+        <item name="android:statusBarColor">@color/kronos_bg</item>
+        <item name="android:navigationBarColor">@color/kronos_bg</item>
+    </style>
+
+    <color name="kronos_bg">#0B0F1A</color>
+</resources>

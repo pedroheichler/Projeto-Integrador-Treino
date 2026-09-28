@@ -1,0 +1,7 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+# Gerado pelo "npm run build:android"
+app/src/main/assets/www/
