@@ -664,7 +664,7 @@ useEffect(() => {
       const [{ data: logs }, { data: prs }] = await Promise.all([
         api
           .from('set_logs')
-          .select('exercise_id, set_index, weight, reps, rpe')
+          .select('exercise_id, set_index, weight, reps, rpe, done')
           .eq('user_id', session.user.id)
           .eq('date', localDateStr())
           .in('exercise_id', exerciseIds),
@@ -673,6 +673,7 @@ useEffect(() => {
 
       if (logs) {
         const byExercise: Record<string, Array<{ weight: string; reps: string; rpe: string }>> = {};
+        const doneByExercise: Record<string, boolean[]> = {};
         for (const row of logs) {
           const arr = byExercise[row.exercise_id] ?? [];
           while (arr.length <= row.set_index) arr.push({ weight: '', reps: '', rpe: '' });
@@ -682,8 +683,21 @@ useEffect(() => {
             rpe: (row as any).rpe != null ? String((row as any).rpe) : '',
           };
           byExercise[row.exercise_id] = arr;
+          (doneByExercise[row.exercise_id] ??= [])[row.set_index] = !!row.done;
         }
         setSetLoadData(byExercise);
+
+        // Séries marcadas hoje continuam marcadas ao reabrir o app
+        setSetProgress(prev => {
+          const next = { ...prev };
+          for (const day of squad.weeklyPlan) {
+            for (const ex of day.exercises) {
+              const done = doneByExercise[ex.id];
+              if (done) next[ex.id] = Array.from({ length: ex.sets }, (_, i) => done[i] ?? false);
+            }
+          }
+          return next;
+        });
       }
 
       if (prs) {
@@ -982,6 +996,25 @@ useEffect(() => {
     } else {
       setRestTimer(prev => prev?.exerciseId === exercise.id ? null : prev);
     }
+  };
+
+  // Marca ou desmarca todas as séries de uma vez. Não reaproveita
+  // handleSetToggle em loop: cada chamada leria o estado antigo e só a
+  // última série ficaria marcada na tela.
+  const handleExerciseToggle = (dayId: string, exercise: Exercise) => {
+    const saved = setProgress[exercise.id] ?? Array(exercise.sets).fill(exercise.completed);
+    const current = Array.from({ length: exercise.sets }, (_, i) => saved[i] ?? false);
+    const target = !current.every(Boolean);
+
+    setSetProgress(prev => ({ ...prev, [exercise.id]: Array(exercise.sets).fill(target) }));
+
+    current.forEach((done, i) => {
+      if (done === target) return;
+      persistSetLog(exercise.id, i, setLoadData[exercise.id]?.[i] ?? { weight: '', reps: '', rpe: '' }, target);
+    });
+
+    if (target !== exercise.completed) toggleExercise(dayId, exercise.id);
+    if (!target) setRestTimer(prev => (prev?.exerciseId === exercise.id ? null : prev));
   };
 
   const handleLoadChange = (exerciseId: string, setIndex: number, field: 'weight' | 'reps' | 'rpe', val: string) => {
@@ -1467,6 +1500,7 @@ useEffect(() => {
                         setsDone={setProgress[ex.id] ?? Array(ex.sets).fill(ex.completed)}
                         loadData={setLoadData[ex.id] ?? []}
                         onSetToggle={(setIndex) => handleSetToggle(activeDayId, ex, setIndex)}
+                        onToggleAll={() => handleExerciseToggle(activeDayId, ex)}
                         onLoadChange={(setIndex, field, val) => handleLoadChange(ex.id, setIndex, field, val)}
                         isPR={prIds.has(ex.id)}
                         previous={previousLoads[ex.id]}
@@ -2324,13 +2358,14 @@ function formatRestDisplay(rest: string): string {
 }
 
 function ExerciseItem({
-  exercise, setsDone, loadData, onSetToggle, onLoadChange, isPR = false, previous,
+  exercise, setsDone, loadData, onSetToggle, onToggleAll, onLoadChange, isPR = false, previous,
   skipped = false, onSkip, onEdit, showEdit = true,
 }: {
   exercise: Exercise;
   setsDone: boolean[];
   loadData: Array<{ weight: string; reps: string; rpe?: string }>;
   onSetToggle: (setIndex: number) => void;
+  onToggleAll: () => void;
   onLoadChange: (setIndex: number, field: 'weight' | 'reps' | 'rpe', val: string) => void;
   isPR?: boolean;
   /** Resumo da última vez que este exercício foi feito (ex: "4×10 · 75 kg") */
@@ -2363,12 +2398,7 @@ function ExerciseItem({
       <div className="flex items-center gap-3.5 px-[18px] py-4">
         {/* Marcar exercício inteiro */}
         <button
-          onClick={() => {
-            // Marca ou desmarca todas as séries de uma vez
-            for (let i = 0; i < exercise.sets; i++) {
-              if ((setsDone[i] ?? false) === allDone) onSetToggle(i);
-            }
-          }}
+          onClick={onToggleAll}
           aria-label={allDone ? 'desmarcar exercício' : 'concluir exercício'}
           className="flex-none w-[26px] h-[26px] rounded-full border-[1.5px] flex items-center justify-center transition-all active:scale-90"
           style={{
