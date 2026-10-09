@@ -37,3 +37,4 @@ O APK sai em `android/app/build/outputs/apk/debug/app-debug.apk`.
 ## Variáveis de ambiente
 
 Copie `.env.example` para `.env`. No app Android nenhuma variável é necessária: o frontend fala com o backend na mesma origem (`/api`).
+.
