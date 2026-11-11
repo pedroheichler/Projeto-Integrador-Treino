@@ -333,6 +333,7 @@ public class QueryService {
             String name = text(filter.get("column"));
             String column = quote(name);
             table.kind(name);
+            AccessRules.checkFilterable(table, name);
             String op = text(filter.get("op"));
             Object raw = filter.get("value");
 
@@ -398,6 +399,7 @@ public class QueryService {
             Map<String, Object> item = asMap(raw);
             String column = text(item.get("column"));
             table.kind(column);
+            AccessRules.checkFilterable(table, column);
             if (!first) sql.append(", ");
             first = false;
             sql.append(quote(column)).append(Boolean.FALSE.equals(item.get("ascending")) ? " DESC" : " ASC");

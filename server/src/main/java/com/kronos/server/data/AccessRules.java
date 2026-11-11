@@ -108,6 +108,17 @@ final class AccessRules {
         }
     }
 
+    /**
+     * O código de convite só aparece para o admin, então também não pode ser
+     * usado em filtro ou ordenação: comparando valores, um membro comum
+     * descobriria o código letra por letra.
+     */
+    static void checkFilterable(Table table, String column) {
+        if (table.name.equals("squads") && column.equals("invite_code")) {
+            throw new ApiException(403, "Não é possível filtrar ou ordenar pelo código de convite.", "nao_permitido");
+        }
+    }
+
     static String dayInMySquads() {
         return "SELECT COUNT(*) FROM workout_days d JOIN squad_members m ON m.squad_id = d.squad_id " +
             "WHERE d.id = ? AND m.user_id = ?";

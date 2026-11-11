@@ -171,6 +171,26 @@ class QueryTest extends ApiTestBase {
     }
 
     @Test
+    void codigoDeConviteNaoVazaPorFiltroNemOrdenacao() {
+        User ana = newUser("Ana");
+        User bruno = newUser("Bruno");
+        String squad = newSquad(ana, "Squad");
+        String code = inviteCode(ana, squad);
+        rpc(bruno, "join_squad_by_code", Map.of("p_code", code));
+
+        // Sem isso, o membro testaria "invite_code >= 'A...'" até descobrir o código
+        assertEquals(403, select(bruno, "squads", "id", "invite_code", "eq", code).status);
+        assertEquals(403, select(bruno, "squads", "id", "invite_code", "gte", "A").status);
+        Map<String, Object> ordered = with(with(query("squads", "select"), "columns", "id"),
+            "order", List.of(Map.of("column", "invite_code", "ascending", true)));
+        assertEquals(403, post("/query", bruno.token, ordered).status);
+
+        // update e delete passam pelos mesmos filtros
+        Map<String, Object> update = with(filter(query("squads", "update"), "invite_code", "eq", code), "values", Map.of("name", "x"));
+        assertEquals(403, post("/query", bruno.token, update).status);
+    }
+
+    @Test
     void ninguemEntraEmSquadSemConvite() {
         User ana = newUser("Ana");
         User bruno = newUser("Bruno");
