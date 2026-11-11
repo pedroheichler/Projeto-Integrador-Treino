@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Copy, LogOut } from 'lucide-react';
+import { Copy, LogOut, RefreshCw, Ban, UserMinus } from 'lucide-react';
 import { api, API_URL } from '../services/api';
 import { Squad } from '../types';
 import type { Session } from '../services/api';
@@ -12,6 +12,9 @@ interface SettingsProps {
   theme: 'noite' | 'cal';
   onToggleTheme: () => void;
   onSquadUpdate: (name: string, icon: string) => void;
+  /** Código de convite trocado (ou revogado, quando vem null) pelo admin */
+  onInviteCodeChange: (code: string | null) => void;
+  onMemberRemoved: (memberId: string) => void;
   onProfileUpdate: (name: string, avatarUrl: string) => void;
   onLeaveSquad: () => void;
   onSquadJoined?: () => void;
@@ -126,7 +129,7 @@ function validateImage(file: File): string | null {
   return null;
 }
 
-export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onSquadUpdate, onProfileUpdate, onLeaveSquad, onSquadJoined }: SettingsProps) {
+export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onSquadUpdate, onInviteCodeChange, onMemberRemoved, onProfileUpdate, onLeaveSquad, onSquadJoined }: SettingsProps) {
   const isAdmin = squad.members.find(m => m.id === session?.user?.id)?.role === 'admin';
   // Espaço pessoal não conta como equipe: as seções de squad ficam ocultas
   const hasSquad = !!squad.id && !isPersonal;
@@ -217,6 +220,39 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
     setSquadIcon(url + '?t=' + Date.now());
     onSquadUpdate(squadName, url);
     setSquadIconUploading(false);
+  };
+
+  // ── Admin do squad (RN04): código de convite e remoção de membros ──
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [teamError, setTeamError] = useState('');
+  const [copied, setCopied] = useState(false);
+  // Remover pede um segundo toque para confirmar
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  const regenerateInviteCode = async () => {
+    setInviteBusy(true); setTeamError('');
+    const { data, error } = await api.rpc<string>('regenerate_invite_code', { p_squad_id: squad.id });
+    setInviteBusy(false);
+    if (error || !data) { setTeamError('Não foi possível gerar um código novo.'); return; }
+    onInviteCodeChange(data);
+  };
+
+  const revokeInviteCode = async () => {
+    setInviteBusy(true); setTeamError('');
+    const { error } = await api.rpc('revoke_invite_code', { p_squad_id: squad.id });
+    setInviteBusy(false);
+    if (error) { setTeamError('Não foi possível revogar o código.'); return; }
+    onInviteCodeChange(null);
+  };
+
+  const removeMember = async (memberId: string) => {
+    setRemovingId(memberId); setTeamError('');
+    const { error } = await api.rpc('remove_squad_member', { p_squad_id: squad.id, p_user_id: memberId });
+    setRemovingId(null);
+    setConfirmRemoveId(null);
+    if (error) { setTeamError('Não foi possível remover o membro.'); return; }
+    onMemberRemoved(memberId);
   };
 
   const saveProfile = async () => {
@@ -440,18 +476,63 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
                 Código de Convite
               </label>
               <div className="flex items-center gap-3">
-                <div className="flex-1 bg-[var(--surface-3)] rounded-xl px-4 py-3 font-mono text-lg font-bold tracking-widest text-[var(--text)] text-center">
-                  {squad.inviteCode || '...'}
-                </div>
-                <button
-                  onClick={() => { navigator.clipboard.writeText(squad.inviteCode || ''); }}
-                  className="p-3 bg-[var(--surface-3)] hover:bg-[var(--border-strong)] rounded-xl text-[var(--text-2)] hover:text-[var(--text)] transition-all"
-                  title="Copiar código"
+                <div
+                  aria-live="polite"
+                  className={`flex-1 bg-[var(--surface-3)] rounded-xl px-4 py-3 text-center ${
+                    squad.inviteCode
+                      ? 'font-mono text-lg font-bold tracking-widest text-[var(--text)]'
+                      : 'text-sm text-[var(--text-2)]'
+                  }`}
                 >
-                  <Copy size={16} />
-                </button>
+                  {squad.inviteCode || 'Sem código ativo'}
+                </div>
+                {squad.inviteCode && (
+                  <button
+                    onClick={() => {
+                      navigator.clipboard?.writeText(squad.inviteCode || '');
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    }}
+                    className="min-w-11 min-h-11 flex items-center justify-center bg-[var(--surface-3)] hover:bg-[var(--border-strong)] rounded-xl text-[var(--text-2)] hover:text-[var(--text)] transition-all"
+                    title="Copiar código"
+                    aria-label="Copiar código de convite"
+                  >
+                    <Copy size={16} aria-hidden="true" />
+                  </button>
+                )}
               </div>
+              {copied && <p className="text-xs text-[var(--text-2)] mt-2" role="status">Código copiado.</p>}
+
+              <div className="flex flex-wrap gap-2 mt-3">
+                <button
+                  onClick={regenerateInviteCode}
+                  disabled={inviteBusy}
+                  className="min-h-11 inline-flex items-center gap-2 px-4 rounded-xl text-xs font-semibold bg-[var(--surface-3)] hover:bg-[var(--border-strong)] text-[var(--text)] transition-all disabled:opacity-60"
+                >
+                  <RefreshCw size={14} aria-hidden="true" />
+                  {squad.inviteCode ? 'Gerar novo código' : 'Gerar código'}
+                </button>
+                {squad.inviteCode && (
+                  <button
+                    onClick={revokeInviteCode}
+                    disabled={inviteBusy}
+                    className="min-h-11 inline-flex items-center gap-2 px-4 rounded-xl text-xs font-semibold border border-[var(--danger)] text-[var(--danger)] hover:bg-[var(--danger-soft)] transition-all disabled:opacity-60"
+                  >
+                    <Ban size={14} aria-hidden="true" />
+                    Revogar código
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-[var(--text-3)] mt-2">
+                {squad.inviteCode
+                  ? 'Gerar um código novo invalida o atual. Revogar impede novas entradas até você gerar outro.'
+                  : 'Ninguém novo consegue entrar no squad enquanto não houver um código.'}
+              </p>
             </div>
+          )}
+
+          {teamError && (
+            <p className="text-xs text-[var(--danger)] bg-[var(--danger-soft)] rounded-lg px-3 py-2 mb-4" role="alert">{teamError}</p>
           )}
 
           <div className="border border-[var(--border)] rounded-2xl overflow-hidden">
@@ -471,6 +552,35 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
                   </div>
                   {member.role === 'admin' && (
                     <span className="text-[10px] text-[var(--text-2)] bg-[var(--surface-3)] px-2 py-0.5 rounded font-medium">admin</span>
+                  )}
+                  {isAdmin && member.id !== session.user.id && (
+                    confirmRemoveId === member.id ? (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => setConfirmRemoveId(null)}
+                          disabled={removingId === member.id}
+                          className="min-h-11 px-3 rounded-xl text-xs font-semibold text-[var(--text-2)] bg-[var(--surface-3)] disabled:opacity-60"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={() => removeMember(member.id)}
+                          disabled={removingId === member.id}
+                          className="min-h-11 px-3 rounded-xl text-xs font-semibold text-[var(--btn-fg)] bg-[var(--danger)] disabled:opacity-60"
+                        >
+                          {removingId === member.id ? 'Removendo...' : 'Confirmar'}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmRemoveId(member.id)}
+                        className="min-w-11 min-h-11 shrink-0 flex items-center justify-center rounded-xl text-[var(--text-2)] hover:text-[var(--danger)] hover:bg-[var(--danger-soft)] transition-all"
+                        title="Remover do squad"
+                        aria-label={`Remover ${member.name} do squad`}
+                      >
+                        <UserMinus size={16} aria-hidden="true" />
+                      </button>
+                    )
                   )}
                 </div>
               ))}

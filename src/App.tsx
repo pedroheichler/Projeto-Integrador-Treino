@@ -96,6 +96,20 @@ function calcStreak(dates: string[], trainingDays: number[] = []): number {
   return streak;
 }
 
+// RN01: só entra na sequência o dia em que o treino foi concluído por inteiro.
+// A conta é feita no servidor (todos os exercícios do treino do dia marcados).
+// Devolve null quando não deu para consultar (ex: sem conexão).
+async function fetchCompletedDays(userIds: string[], from: string): Promise<Record<string, string[]> | null> {
+  const { data, error } = await api.rpc<{ user_id: string; date: string }[]>('completed_training_days', {
+    p_user_ids: userIds,
+    p_from: from,
+  });
+  if (error) return null;
+  const byUser: Record<string, string[]> = {};
+  for (const row of data ?? []) (byUser[row.user_id] ??= []).push(row.date);
+  return byUser;
+}
+
 function getStreakStyle(days: number): { color: string; badge: string } {
   if (days >= 60) return { color: 'var(--load)', badge: '60 dias 🏆' };
   if (days >= 45) return { color: 'var(--accent)', badge: '45 dias ⚡' };
@@ -103,6 +117,18 @@ function getStreakStyle(days: number): { color: string; badge: string } {
   if (days >= 15) return { color: 'var(--load)', badge: '15 dias 🔥' };
   if (days >= 7)  return { color: 'var(--load)', badge: '7 dias 🏅' };
   return { color: 'var(--text)', badge: '' };
+}
+
+// RN02: recorde = série concluída com a maior carga; no empate, mais repetições
+interface PersonalRecord {
+  weight: number;
+  reps: number | null;
+}
+
+function beatsRecord(weight: number, reps: number | null, record?: PersonalRecord): boolean {
+  if (!record) return true;
+  if (weight !== record.weight) return weight > record.weight;
+  return reps != null && reps > (record.reps ?? 0);
 }
 
 function parseRestSeconds(rest: string): number {
@@ -220,7 +246,7 @@ export default function App() {
   const [setLoadData, setSetLoadData] = useState<Record<string, Array<{ weight: string; reps: string; rpe: string }>>>({});
   const [prIds, setPrIds] = useState<Set<string>>(new Set());
   // Maior peso já registrado por exercício, vindo do banco
-  const [personalRecords, setPersonalRecords] = useState<Record<string, number>>({});
+  const [personalRecords, setPersonalRecords] = useState<Record<string, PersonalRecord>>({});
   // Resumo da última sessão de cada exercício (ex: "4×10 · 75 kg")
   const [previousLoads, setPreviousLoads] = useState<Record<string, string>>({});
   // Modo treino em andamento
@@ -388,16 +414,12 @@ useEffect(() => {
       { data: exercisesData },
       { data: progressData },
       { data: profilesData },
-      { data: allProgressData },
-      { data: membersProgressData },
+      completedDays,
     ] = await Promise.all([
       api.from('exercises').select('id, name, sets, reps, rest, notes, workout_day_id').in('workout_day_id', dayIds).order('created_at', { ascending: true }),
       api.from('exercise_progress').select('exercise_id, completed').eq('user_id', currentSession.user.id).eq('date', today),
       api.from('profiles').select('id, name, avatar_url').in('id', allUserIds),
-      api.from('exercise_progress').select('date').eq('user_id', currentSession.user.id).eq('completed', true).gte('date', oneYearAgo),
-      memberUserIds.length > 0
-        ? api.from('exercise_progress').select('user_id, date').in('user_id', memberUserIds).eq('completed', true).gte('date', oneYearAgo)
-        : Promise.resolve({ data: [] }),
+      fetchCompletedDays(allUserIds, oneYearAgo),
     ]);
 
     // ── Montar estado completo de uma vez ────────────────────────────────────
@@ -449,19 +471,12 @@ useEffect(() => {
       .filter((i: number) => i !== -1);
 
     // Dias treinados (streak consecutivo) — dados já vêm no batch 2
-    const myDates = (allProgressData || []).map((r: any) => r.date as string);
-    setDiasTreinados(calcStreak(myDates, trainingDayIndices));
+    setDiasTreinados(calcStreak(completedDays?.[currentSession.user.id] ?? [], trainingDayIndices));
 
     // Streak consecutivo por membro do squad (mesmo plano = mesmos dias de treino)
     const streaksByMember: Record<string, number> = {};
-    const mpData = (membersProgressData || []) as { user_id: string; date: string }[];
-    const datesByMember: Record<string, string[]> = {};
-    for (const row of mpData) {
-      if (!datesByMember[row.user_id]) datesByMember[row.user_id] = [];
-      datesByMember[row.user_id].push(row.date);
-    }
     for (const uid of memberUserIds) {
-      streaksByMember[uid] = calcStreak(datesByMember[uid] || [], trainingDayIndices);
+      streaksByMember[uid] = calcStreak(completedDays?.[uid] ?? [], trainingDayIndices);
     }
     setMemberStreaks(streaksByMember);
     setSquadLoading(false);
@@ -478,14 +493,10 @@ useEffect(() => {
       .filter(i => i !== -1);
 
     const oneYearAgo = localDateStr(new Date(Date.now() - 365 * 24 * 60 * 60 * 1000));
-    const { data } = await api
-      .from('exercise_progress')
-      .select('date')
-      .eq('user_id', session.user.id)
-      .eq('completed', true)
-      .gte('date', oneYearAgo);
-    const myDates = (data || []).map((r: any) => r.date as string);
-    setDiasTreinados(calcStreak(myDates, trainingDayIndices));
+    const completedDays = await fetchCompletedDays([session.user.id], oneYearAgo);
+    // Sem conexão: mantém a sequência que já estava na tela
+    if (!completedDays) return;
+    setDiasTreinados(calcStreak(completedDays[session.user.id] ?? [], trainingDayIndices));
   }, [session?.user?.id, squad.weeklyPlan]);
 
   const fetchProgressStats = useCallback(async () => {
@@ -701,9 +712,12 @@ useEffect(() => {
       }
 
       if (prs) {
-        const map: Record<string, number> = {};
-        for (const row of prs as { exercise_id: string; best_weight: number }[]) {
-          map[row.exercise_id] = Number(row.best_weight);
+        const map: Record<string, PersonalRecord> = {};
+        for (const row of prs as { exercise_id: string; best_weight: number; best_reps: number | null }[]) {
+          map[row.exercise_id] = {
+            weight: Number(row.best_weight),
+            reps: row.best_reps != null ? Number(row.best_reps) : null,
+          };
         }
         setPersonalRecords(map);
       }
@@ -986,10 +1000,14 @@ useEffect(() => {
       const secs = parseRestSeconds(exercise.rest);
       if (secs > 0) setRestTimer({ exerciseId: exercise.id, remaining: secs, total: secs });
 
-      // Recorde: compara com o maior peso já registrado no banco
-      const weight = parseFloat((setLoadData[exercise.id]?.[setIndex]?.weight ?? '').replace(',', '.'));
-      if (!isNaN(weight) && weight > 0 && weight > (personalRecords[exercise.id] ?? 0)) {
-        setPersonalRecords(prev => ({ ...prev, [exercise.id]: weight }));
+      // Recorde (RN02): a série concluída supera a maior carga já registrada,
+      // ou repete a carga com mais repetições
+      const typed = setLoadData[exercise.id]?.[setIndex];
+      const weight = parseFloat((typed?.weight ?? '').replace(',', '.'));
+      const repsTyped = parseInt(typed?.reps ?? '', 10);
+      const reps = Number.isFinite(repsTyped) ? repsTyped : null;
+      if (!isNaN(weight) && weight > 0 && beatsRecord(weight, reps, personalRecords[exercise.id])) {
+        setPersonalRecords(prev => ({ ...prev, [exercise.id]: { weight, reps } }));
         setPrIds(prev => new Set(prev).add(exercise.id));
         setTimeout(() => setPrIds(prev => { const s = new Set(prev); s.delete(exercise.id); return s; }), 6000);
       }
@@ -1993,14 +2011,14 @@ useEffect(() => {
                       Recordes pessoais
                     </p>
                     <div className="flex flex-wrap gap-2 mt-3.5">
-                      {Object.entries(personalRecords).map(([exId, kg]) => {
+                      {Object.entries(personalRecords).map(([exId, record]) => {
                         const name = evolution[exId]?.name
                           ?? squad.weeklyPlan.flatMap(d => d.exercises).find(e => e.id === exId)?.name;
                         if (!name) return null;
                         return (
                           <span key={exId}
                             className="rounded-full bg-[var(--accent-soft)] text-[var(--accent)] px-3 py-2 text-[11.5px] font-semibold">
-                            {name} · {kg} kg
+                            {name} · {record.weight} kg{record.reps != null ? ` × ${record.reps}` : ''}
                           </span>
                         );
                       })}
@@ -2128,6 +2146,11 @@ useEffect(() => {
                 theme={theme}
                 onToggleTheme={toggleTheme}
                 onSquadUpdate={(name, icon) => setSquad(prev => ({ ...prev, name, icon }))}
+                onInviteCodeChange={code => setSquad(prev => ({ ...prev, inviteCode: code ?? undefined }))}
+                onMemberRemoved={memberId => setSquad(prev => ({
+                  ...prev,
+                  members: prev.members.filter(m => m.id !== memberId),
+                }))}
                 onLeaveSquad={refreshSquad}
                 onSquadJoined={refreshSquad}
                 onProfileUpdate={(name, avatarUrl) => setSquad(prev => ({
