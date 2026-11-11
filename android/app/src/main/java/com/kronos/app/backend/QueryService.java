@@ -70,6 +70,7 @@ public class QueryService {
     public JSONArray execute(String userId, JSONObject query) throws ApiException, JSONException {
         TableInfo table = table(query.optString("table"));
         String action = query.optString("action", "select");
+        checkSquadRules(table, action);
 
         switch (action) {
             case "select":
@@ -85,6 +86,22 @@ public class QueryService {
                 return new JSONArray();
             default:
                 throw new ApiException(400, "Ação inválida: " + action);
+        }
+    }
+
+    /**
+     * Squads e membros só mudam pelas funções do RpcService (create_squad,
+     * join_squad_by_code, remove_squad_member...), que conferem o papel de
+     * quem pediu. Por aqui o membro só consegue sair do squad e o admin só
+     * edita nome e ícone.
+     */
+    private static void checkSquadRules(TableInfo table, String action) throws ApiException {
+        boolean write = !action.equals("select");
+        if (table.name.equals("squad_members") && write && !action.equals("delete")) {
+            throw new ApiException(403, "Membros do squad só mudam pelo convite ou pelo admin.", "apenas_admin");
+        }
+        if (table.name.equals("squads") && write && !action.equals("update")) {
+            throw new ApiException(403, "Operação não permitida em squads.", "apenas_admin");
         }
     }
 
@@ -207,6 +224,13 @@ public class QueryService {
         // Não deixa transferir a linha para outro dono
         String owner = table.ownerColumn();
         if (owner != null) values.remove(owner);
+        if (table.name.equals("squads")) {
+            // RN04: o código de convite só muda por regenerate/revoke_invite_code
+            values.remove("invite_code");
+            values.remove("is_personal");
+            values.remove("created_by");
+            where.and("id IN (SELECT squad_id FROM squad_members WHERE user_id = ? AND role = 'admin')", userId);
+        }
 
         List<Long> rowIds = new ArrayList<>();
         SQLiteDatabase db = database.getWritableDatabase();
