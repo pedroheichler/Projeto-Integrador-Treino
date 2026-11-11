@@ -163,6 +163,13 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
   const [squadStatus, setSquadStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const squadIconInputRef = useRef<HTMLInputElement>(null);
 
+  // Criou, entrou ou saiu de um squad: os campos passam a mostrar o squad atual
+  // (sem isso, "Salvar" regravava o squad novo com o nome do anterior)
+  useEffect(() => {
+    setSquadName(squad.name);
+    setSquadIcon(squad.icon || '');
+  }, [squad.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     api
       .from('profiles')
