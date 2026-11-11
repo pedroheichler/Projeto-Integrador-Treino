@@ -87,10 +87,10 @@ function SquadSetup({ onComplete }: { onComplete: () => void }) {
       {modo === 'criar' && (
         <div>
           <button onClick={() => { setModo('escolha'); setErro(''); }} className="text-xs text-[var(--text-2)] hover:text-[var(--text)] mb-4 block">← Voltar</button>
-          <label className="block text-xs font-bold text-[var(--text-2)] uppercase tracking-widest mb-2">Nome do squad</label>
-          <input value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Os Brutos do CT"
+          <label htmlFor="novo-squad-nome" className="block text-xs font-bold text-[var(--text-2)] uppercase tracking-widest mb-2">Nome do squad</label>
+          <input id="novo-squad-nome" value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Os Brutos do CT"
             className="w-full bg-[var(--surface-3)] border-none rounded-xl px-4 py-3 text-sm text-[var(--btn-fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] mb-4" />
-          {erro && <p className="text-[var(--danger)] text-xs mb-3">{erro}</p>}
+          {erro && <p role="alert" className="text-[var(--danger)] text-xs mb-3">{erro}</p>}
           <button onClick={criarSquad} disabled={loading}
             className="w-full bg-[var(--accent)] hover:bg-[var(--btn-bg-hover)] disabled:opacity-60 text-[var(--btn-fg)] py-3 rounded-xl text-sm font-semibold transition-all">
             {loading ? 'Criando...' : 'Criar Squad'}
@@ -101,10 +101,10 @@ function SquadSetup({ onComplete }: { onComplete: () => void }) {
       {modo === 'entrar' && (
         <div>
           <button onClick={() => { setModo('escolha'); setErro(''); }} className="text-xs text-[var(--text-2)] hover:text-[var(--text)] mb-4 block">← Voltar</button>
-          <label className="block text-xs font-bold text-[var(--text-2)] uppercase tracking-widest mb-2">Código de convite</label>
-          <input value={codigo} onChange={e => setCodigo(e.target.value)} placeholder="Ex: ABC123"
+          <label htmlFor="entrar-squad-codigo" className="block text-xs font-bold text-[var(--text-2)] uppercase tracking-widest mb-2">Código de convite</label>
+          <input id="entrar-squad-codigo" value={codigo} onChange={e => setCodigo(e.target.value)} placeholder="Ex: ABC123"
             className="w-full bg-[var(--surface-3)] border-none rounded-xl px-4 py-3 text-sm text-[var(--btn-fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] mb-4 uppercase tracking-widest" />
-          {erro && <p className="text-[var(--danger)] text-xs mb-3">{erro}</p>}
+          {erro && <p role="alert" className="text-[var(--danger)] text-xs mb-3">{erro}</p>}
           <button onClick={entrarSquad} disabled={loading}
             className="w-full bg-[var(--accent)] hover:bg-[var(--btn-bg-hover)] disabled:opacity-60 text-[var(--btn-fg)] py-3 rounded-xl text-sm font-semibold transition-all">
             {loading ? 'Entrando...' : 'Entrar no Squad'}
@@ -305,11 +305,12 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
         <div className="grid grid-cols-2 gap-3">
           {([
             { id: 'noite', nome: 'Noite azul', desc: 'Escuro, âmbar na carga', dot: '#6E8FF7', bg: '#0B0F1A' },
-            { id: 'cal',   nome: 'Cal e limão', desc: 'Claro, limão no progresso', dot: '#7E9204', bg: '#F2F1EC' },
+            { id: 'cal',   nome: 'Cal e limão', desc: 'Claro, limão no progresso', dot: '#5E6E00', bg: '#F2F1EC' },
           ] as const).map(t => (
             <button
               key={t.id}
               onClick={() => { if (theme !== t.id) onToggleTheme(); }}
+              aria-pressed={theme === t.id}
               className={`text-left p-4 rounded-2xl border transition-all ${
                 theme === t.id
                   ? 'border-[var(--accent)] bg-[var(--accent-soft)]'
@@ -340,7 +341,7 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
               {avatarUrl ? (
                 <img
                   src={avatarUrl}
-                  alt="avatar"
+                  alt="Sua foto de perfil"
                   className={`w-20 h-20 rounded-full object-cover bg-[var(--surface-3)] ${avatarUploading ? 'opacity-60' : ''}`}
                 />
               ) : (
@@ -360,29 +361,30 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
               <button
                 onClick={() => avatarInputRef.current?.click()}
                 disabled={avatarUploading}
-                className="text-xs text-[var(--accent)] hover:text-[var(--accent)] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                className="min-h-11 text-xs text-[var(--accent)] hover:text-[var(--accent)] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {avatarUploading ? 'Enviando...' : 'Trocar foto de perfil'}
               </button>
               <p className="text-xs text-[var(--text-3)] mt-1">JPG, PNG ou WebP · até 5 MB</p>
-              {avatarUploadError && <p className="text-xs text-[var(--danger)] mt-1">{avatarUploadError}</p>}
+              {avatarUploadError && <p role="alert" className="text-xs text-[var(--danger)] mt-1">{avatarUploadError}</p>}
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-[var(--text-2)] uppercase tracking-widest mb-2">
+            <p className="block text-xs font-bold text-[var(--text-2)] uppercase tracking-widest mb-2">
               E-mail
-            </label>
+            </p>
             <div className="bg-[var(--surface-3)] rounded-xl px-4 py-3 text-sm text-[var(--text-2)]">
               {session.user.email}
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-[var(--text-2)] uppercase tracking-widest mb-2">
+            <label htmlFor="perfil-nome" className="block text-xs font-bold text-[var(--text-2)] uppercase tracking-widest mb-2">
               Nome de exibição
             </label>
             <input
+              id="perfil-nome"
               type="text"
               value={displayName}
               onChange={e => setDisplayName(e.target.value)}
@@ -416,7 +418,7 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
                 {squadIcon ? (
                   <img
                     src={squadIcon}
-                    alt="squad"
+                    alt="Foto do squad"
                     className={`w-20 h-20 rounded-2xl object-cover bg-[var(--surface-3)] ${squadIconUploading ? 'opacity-60' : ''}`}
                     onError={e => (e.currentTarget.style.display = 'none')}
                   />
@@ -437,20 +439,21 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
                 <button
                   onClick={() => squadIconInputRef.current?.click()}
                   disabled={squadIconUploading}
-                  className="text-xs text-[var(--accent)] hover:text-[var(--accent)] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="min-h-11 text-xs text-[var(--accent)] hover:text-[var(--accent)] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {squadIconUploading ? 'Enviando...' : 'Trocar foto do squad'}
                 </button>
                 <p className="text-xs text-[var(--text-3)] mt-1">JPG, PNG ou WebP · até 5 MB</p>
-                {squadIconUploadError && <p className="text-xs text-[var(--danger)] mt-1">{squadIconUploadError}</p>}
+                {squadIconUploadError && <p role="alert" className="text-xs text-[var(--danger)] mt-1">{squadIconUploadError}</p>}
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[var(--text-2)] uppercase tracking-widest mb-2">
+              <label htmlFor="squad-nome" className="block text-xs font-bold text-[var(--text-2)] uppercase tracking-widest mb-2">
                 Nome do Squad
               </label>
               <input
+                id="squad-nome"
                 type="text"
                 value={squadName}
                 onChange={e => setSquadName(e.target.value)}
@@ -479,9 +482,9 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
 
           {isAdmin && (
             <div className="mb-5">
-              <label className="block text-xs font-bold text-[var(--text-2)] uppercase tracking-widest mb-2">
+              <p className="block text-xs font-bold text-[var(--text-2)] uppercase tracking-widest mb-2">
                 Código de Convite
-              </label>
+              </p>
               <div className="flex items-center gap-3">
                 <div
                   aria-live="polite"
@@ -551,7 +554,7 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
             <div className="divide-y divide-[var(--surface-3)]">
               {squad.members.map(member => (
                 <div key={member.id} className="px-4 py-3.5 flex items-center gap-3">
-                  <img src={member.avatar} alt={member.name}
+                  <img src={member.avatar} alt=""
                     className="w-9 h-9 rounded-full bg-[var(--surface-3)] shrink-0" referrerPolicy="no-referrer" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-[var(--text)] truncate">{member.name}</p>
@@ -622,14 +625,17 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
           onClick={() => !leaving && setShowLeaveConfirm(false)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sair-squad-titulo"
             className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl w-full max-w-sm p-7 shadow-2xl"
             onClick={e => e.stopPropagation()}
           >
             <div className="w-12 h-12 rounded-2xl bg-[var(--danger-soft)] border border-red-500/20 flex items-center justify-center mb-5">
-              <LogOut size={20} className="text-[var(--danger)]" />
+              <LogOut size={20} className="text-[var(--danger)]" aria-hidden="true" />
             </div>
 
-            <h3 className="font-display text-lg font-bold text-[var(--text)] mb-2">Sair do squad?</h3>
+            <h3 id="sair-squad-titulo" className="font-display text-lg font-bold text-[var(--text)] mb-2">Sair do squad?</h3>
             <p className="text-sm text-[var(--text-2)] leading-relaxed mb-1">
               Você vai deixar <span className="text-[var(--text)] font-medium">{squad.name || 'o squad'}</span> e
               voltar a treinar sozinho no seu espaço pessoal.
@@ -639,7 +645,7 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
             </p>
 
             {leaveError && (
-              <p className="text-xs text-[var(--danger)] bg-[var(--danger-soft)] rounded-lg px-3 py-2 mb-4">{leaveError}</p>
+              <p role="alert" className="text-xs text-[var(--danger)] bg-[var(--danger-soft)] rounded-lg px-3 py-2 mb-4">{leaveError}</p>
             )}
 
             <div className="flex gap-3">

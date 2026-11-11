@@ -932,8 +932,13 @@ useEffect(() => {
     setIsEditorOpen(true);
   };
 
-  const saveExercise = (updatedEx: Exercise) => {
+  const saveExercise = (edited: Exercise) => {
     if (!editingExercise) return;
+    // Campo de séries vazio ou fora da faixa: fica entre 1 e 20
+    const updatedEx = {
+      ...edited,
+      sets: Number.isFinite(edited.sets) ? Math.min(20, Math.max(1, edited.sets)) : 1,
+    };
     saveExerciseToDB(updatedEx).catch(err => {
       console.error(err);
       notify('Não foi possível salvar o exercício.');
@@ -1558,7 +1563,8 @@ useEffect(() => {
                         value={currentDayPlan.focus || ''}
                         onChange={(e) => updateDayFocus(activeDayId, e.target.value)}
                         placeholder="FOCO DO TREINO"
-                        className="bg-transparent border-none text-[var(--text)] p-0 focus:ring-0 outline-none placeholder:text-[var(--border)] w-full uppercase"
+                        aria-label={`Foco do treino de ${currentDayPlan.name}`}
+                        className="bg-transparent border-none text-[var(--text)] p-0 focus:ring-0 outline-none placeholder:text-[var(--text-3)] w-full uppercase"
                         style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 'clamp(1.6rem, 5vw, 2.4rem)', letterSpacing: '0.06em' }}
                       />
                       {squad.templates.length > 0 && (
@@ -1758,6 +1764,8 @@ useEffect(() => {
                     const isSelected = idx === selectedWeekDay;
                     return (
                       <button key={day.id} onClick={() => setSelectedWeekDay(idx)}
+                        aria-label={`${day.name}${isToday ? ', hoje' : ''}${isDone ? ', treino concluído' : ''}`}
+                        aria-pressed={isSelected}
                         className="flex flex-col items-center gap-1 shrink-0 transition-all"
                         style={{ minWidth: 44 }}>
                         <div className={`w-9 h-9 rounded-full flex items-center justify-center transition-all text-xs font-semibold
@@ -1796,12 +1804,14 @@ useEffect(() => {
                             value={day.focus || ''}
                             onChange={(e) => updateDayFocus(day.id, e.target.value)}
                             placeholder="Foco do treino..."
-                            className="bg-transparent border-none text-xs text-[var(--text-2)] p-0 focus:ring-0 outline-none placeholder:text-[var(--border-strong)] w-full"
+                            aria-label={`Foco do treino de ${day.name}`}
+                            className="bg-transparent border-none text-xs text-[var(--text-2)] p-0 focus:ring-0 outline-none placeholder:text-[var(--text-3)] w-full"
                           />
                         </div>
                         <button onClick={() => addExercise(day.id)}
-                          className="w-8 h-8 rounded-full bg-[var(--surface-3)] flex items-center justify-center text-[var(--text-2)] shrink-0 ml-2">
-                          <Plus size={14} />
+                          aria-label={`Adicionar exercício em ${day.name}`}
+                          className="w-11 h-11 rounded-full bg-[var(--surface-3)] flex items-center justify-center text-[var(--text-2)] shrink-0 ml-2">
+                          <Plus size={14} aria-hidden="true" />
                         </button>
                       </div>
                       {/* Exercises */}
@@ -1815,12 +1825,14 @@ useEffect(() => {
                               </div>
                               <div className="flex gap-2 shrink-0">
                                 <button onClick={() => openEditor(day.id, ex)}
-                                  className="w-8 h-8 rounded-lg bg-[var(--surface-3)] flex items-center justify-center text-[var(--text-2)]">
-                                  <Edit3 size={13} />
+                                  aria-label={`Editar ${ex.name}`}
+                                  className="w-11 h-11 rounded-lg bg-[var(--surface-3)] flex items-center justify-center text-[var(--text-2)]">
+                                  <Edit3 size={13} aria-hidden="true" />
                                 </button>
                                 <button onClick={() => deleteExercise(day.id, ex.id)}
-                                  className="w-8 h-8 rounded-lg bg-[var(--surface-3)] flex items-center justify-center text-[var(--text-3)]">
-                                  <Trash2 size={13} />
+                                  aria-label={`Excluir ${ex.name}`}
+                                  className="w-11 h-11 rounded-lg bg-[var(--surface-3)] flex items-center justify-center text-[var(--text-3)]">
+                                  <Trash2 size={13} aria-hidden="true" />
                                 </button>
                               </div>
                             </div>
@@ -1853,7 +1865,8 @@ useEffect(() => {
                             value={day.focus || ''}
                             onChange={(e) => updateDayFocus(day.id, e.target.value)}
                             placeholder="Foco..."
-                            className="bg-transparent border-none text-[10px] text-[var(--text-2)] p-0 focus:ring-0 outline-none placeholder:text-[var(--border-strong)] w-full"
+                            aria-label={`Foco do treino de ${day.name}`}
+                            className="bg-transparent border-none text-[10px] text-[var(--text-2)] p-0 focus:ring-0 outline-none placeholder:text-[var(--text-3)] w-full"
                           />
                           {squad.templates.length > 0 && (
                             <div className="absolute top-full left-0 mt-1 w-44 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg z-30 hidden group-focus-within/focus:block max-h-36 overflow-y-auto">
@@ -1869,8 +1882,9 @@ useEffect(() => {
                         </div>
                       </div>
                       <button onClick={() => addExercise(day.id)}
+                        aria-label={`Adicionar exercício em ${day.name}`}
                         className="p-1.5 rounded-lg text-[var(--text-3)] hover:text-[var(--text-2)] hover:bg-[var(--surface-3)] transition-colors shrink-0">
-                        <Plus size={14} />
+                        <Plus size={14} aria-hidden="true" />
                       </button>
                     </div>
                     <div className="space-y-1.5 flex-1">
@@ -1882,11 +1896,13 @@ useEffect(() => {
                               <p className="text-xs font-medium text-[var(--text)] truncate">{ex.name}</p>
                               <p className="text-[10px] text-[var(--text-3)] mt-0.5">{ex.sets}×{ex.reps} · {ex.rest}</p>
                             </div>
-                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-all shrink-0">
                               <button onClick={(e) => { e.stopPropagation(); openEditor(day.id, ex); }}
-                                className="p-1 text-[var(--text-2)] hover:text-[var(--text)]"><Edit3 size={11} /></button>
+                                aria-label={`Editar ${ex.name}`}
+                                className="p-1 text-[var(--text-2)] hover:text-[var(--text)]"><Edit3 size={11} aria-hidden="true" /></button>
                               <button onClick={(e) => { e.stopPropagation(); deleteExercise(day.id, ex.id); }}
-                                className="p-1 text-[var(--text-2)] hover:text-[var(--danger)]"><Trash2 size={11} /></button>
+                                aria-label={`Excluir ${ex.name}`}
+                                className="p-1 text-[var(--text-2)] hover:text-[var(--danger)]"><Trash2 size={11} aria-hidden="true" /></button>
                             </div>
                           </div>
                         ))
@@ -2096,6 +2112,7 @@ useEffect(() => {
                           Evolução de carga
                         </p>
                         <select
+                          aria-label="Exercício do gráfico de evolução de carga"
                           value={evolutionPick ?? ''}
                           onChange={e => setEvolutionPick(e.target.value)}
                           className="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2.5 py-[7px] text-[11.5px] font-semibold text-[var(--text)] outline-none focus:border-[var(--border-strong)] max-w-[55%] truncate"
@@ -2320,6 +2337,7 @@ useEffect(() => {
             initial={{ opacity: 0, y: -16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
+            role={toast.kind === 'erro' ? 'alert' : 'status'}
             className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold border ${
               toast.kind === 'ok'
                 ? 'bg-[var(--accent-soft)] border-[var(--accent-line)] text-[var(--accent)]'
@@ -2348,18 +2366,22 @@ useEffect(() => {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="editor-exercicio-titulo"
               className="bg-[var(--surface)] border border-[var(--border)] w-full max-w-md rounded-3xl overflow-hidden shadow-2xl"
             >
               <div className="p-6 border-b border-[var(--border)] flex justify-between items-center">
-                <h3 className="text-xl font-bold">Editar Exercício</h3>
-                <button onClick={() => setIsEditorOpen(false)} className="text-[var(--text-2)] hover:text-[var(--text)] transition-colors">
-                  <Plus className="rotate-45" />
+                <h3 id="editor-exercicio-titulo" className="text-xl font-bold">Editar Exercício</h3>
+                <button onClick={() => setIsEditorOpen(false)} aria-label="Fechar"
+                  className="min-w-11 min-h-11 flex items-center justify-center text-[var(--text-2)] hover:text-[var(--text)] transition-colors">
+                  <Plus className="rotate-45" aria-hidden="true" />
                 </button>
               </div>
               <div className="p-6 space-y-4">
                 <div>
-                  <label className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Nome do Exercício</label>
-                  <input 
+                  <label htmlFor="editor-nome" className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Nome do Exercício</label>
+                  <input id="editor-nome" 
                     type="text" 
                     value={editingExercise.exercise.name}
                     onChange={(e) => setEditingExercise({ ...editingExercise, exercise: { ...editingExercise.exercise, name: e.target.value } })}
@@ -2368,17 +2390,19 @@ useEffect(() => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Séries</label>
-                    <input 
+                    <label htmlFor="editor-series" className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Séries</label>
+                    <input id="editor-series" 
                       type="number" 
-                      value={editingExercise.exercise.sets}
+                      min={1}
+                      max={20}
+                      value={Number.isFinite(editingExercise.exercise.sets) ? editingExercise.exercise.sets : ''}
                       onChange={(e) => setEditingExercise({ ...editingExercise, exercise: { ...editingExercise.exercise, sets: parseInt(e.target.value) } })}
                       className="w-full bg-[var(--surface-3)] border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[var(--accent)] outline-none"
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Reps</label>
-                    <input 
+                    <label htmlFor="editor-reps" className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Reps</label>
+                    <input id="editor-reps" 
                       type="text" 
                       value={editingExercise.exercise.reps}
                       onChange={(e) => setEditingExercise({ ...editingExercise, exercise: { ...editingExercise.exercise, reps: e.target.value } })}
@@ -2387,8 +2411,8 @@ useEffect(() => {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Descanso</label>
-                  <input 
+                  <label htmlFor="editor-descanso" className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Descanso</label>
+                  <input id="editor-descanso" 
                     type="text" 
                     value={editingExercise.exercise.rest}
                     onChange={(e) => setEditingExercise({ ...editingExercise, exercise: { ...editingExercise.exercise, rest: e.target.value } })}
@@ -2396,8 +2420,8 @@ useEffect(() => {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Observações</label>
-                  <textarea 
+                  <label htmlFor="editor-notas" className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Observações</label>
+                  <textarea id="editor-notas" 
                     value={editingExercise.exercise.notes || ''}
                     onChange={(e) => setEditingExercise({ ...editingExercise, exercise: { ...editingExercise.exercise, notes: e.target.value } })}
                     className="w-full bg-[var(--surface-3)] border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[var(--accent)] outline-none h-24 resize-none"
@@ -2595,8 +2619,9 @@ function ExerciseItem({
 
         {showEdit && onEdit && (
           <button onClick={e => { e.stopPropagation(); onEdit(); }}
+            aria-label={`Editar ${exercise.name}`}
             className="text-[var(--text-3)] hover:text-[var(--text-2)] transition-colors shrink-0">
-            <Edit3 size={12} />
+            <Edit3 size={12} aria-hidden="true" />
           </button>
         )}
 
@@ -2627,6 +2652,7 @@ function ExerciseItem({
                     <span className="text-xs font-semibold text-[var(--text-2)]">{i + 1}</span>
                     <input
                       type="number" inputMode="decimal" placeholder="—"
+                      aria-label={`Carga em kg da série ${i + 1}`}
                       value={load.weight}
                       onChange={e => onLoadChange(i, 'weight', e.target.value)}
                       onClick={e => e.stopPropagation()}
@@ -2636,6 +2662,7 @@ function ExerciseItem({
                     />
                     <input
                       type="number" inputMode="numeric" placeholder={exercise.reps}
+                      aria-label={`Repetições da série ${i + 1}`}
                       value={load.reps}
                       onChange={e => onLoadChange(i, 'reps', e.target.value)}
                       onClick={e => e.stopPropagation()}
@@ -2647,11 +2674,13 @@ function ExerciseItem({
                       onChange={e => onLoadChange(i, 'rpe', e.target.value)}
                       onClick={e => e.stopPropagation()}
                       title="Esforço percebido de 1 a 10"
+                      aria-label={`Esforço percebido (RPE) da série ${i + 1}, de 1 a 10`}
                       className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-1.5 py-[9px] text-[13px] font-semibold tabular-nums text-center text-[var(--load)] outline-none focus:border-[var(--border-strong)] transition-colors"
                     />
                     <button
                       onClick={() => onSetToggle(i)}
-                      aria-label="série feita"
+                      aria-label={`Série ${i + 1} feita`}
+                      aria-pressed={done}
                       className="w-[30px] h-[30px] rounded-lg border-[1.5px] flex items-center justify-center transition-all active:scale-90"
                       style={{
                         borderColor: done ? 'var(--accent)' : 'var(--border-strong)',
@@ -2743,6 +2772,7 @@ function LoadTracker({
         <div className="bg-[var(--surface)] border border-[var(--accent-line)] rounded-xl p-4 mb-4 flex gap-2 items-center">
           <input
             autoFocus
+            aria-label="Nome do exercício"
             value={newName}
             onChange={e => setNewName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setNewName(''); setAdding(false); } }}
@@ -2805,7 +2835,8 @@ function LoadTracker({
                   )}
                   <button
                     onClick={() => { if (confirm(`Excluir "${ex.name}" e todo o histórico?`)) onDelete(ex.id); }}
-                    className="text-[var(--border-strong)] hover:text-red-400 transition-colors p-1"
+                    aria-label={`Excluir ${ex.name} e o histórico`}
+                    className="text-[var(--text-3)] hover:text-[var(--danger)] transition-colors p-1"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -2815,11 +2846,12 @@ function LoadTracker({
               {/* Input novo registro */}
               <div className="flex gap-2">
                 <input
+                  aria-label={`Novo registro de carga de ${ex.name}`}
                   value={inputVal}
                   onChange={e => onSetInput(ex.id, e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') onSave(ex.id, inputVal); }}
                   placeholder="Ex: 14kg · 3×10"
-                  className="flex-1 bg-[var(--bg)] border border-[var(--border)] focus:border-[var(--accent-line)] rounded-lg px-3 py-2 text-sm text-[var(--text)] placeholder-[var(--border-strong)] outline-none transition-colors"
+                  className="flex-1 bg-[var(--bg)] border border-[var(--border)] focus:border-[var(--accent-line)] rounded-lg px-3 py-2 text-sm text-[var(--text)] placeholder-[var(--text-3)] outline-none transition-colors"
                 />
                 <button
                   onClick={() => onSave(ex.id, inputVal)}
@@ -2858,7 +2890,7 @@ function LoadTracker({
                           )}
                           <button
                             onClick={() => onDeleteEntry(ex.id, entry.id)}
-                            className="opacity-0 group-hover:opacity-100 text-[var(--border-strong)] hover:text-red-400 transition-all shrink-0"
+                            className="opacity-0 group-hover:opacity-100 text-[var(--text-3)] hover:text-[var(--danger)] transition-all shrink-0"
                           >
                             <Trash2 size={10} />
                           </button>
