@@ -110,6 +110,19 @@ async function fetchCompletedDays(userIds: string[], from: string): Promise<Reco
   return byUser;
 }
 
+// Lê a tela e a aba do endereço (#/dieta/corpo). Devolve só o que for válido.
+function routeFromHash(): { view?: ViewType; treinoTab?: TreinoTab; dietaTab?: DietaTab } {
+  const [view, sub] = window.location.hash.replace(/^#\/?/, '').split('/');
+  const views: ViewType[] = ['treino', 'dieta', 'ia', 'settings'];
+  if (!views.includes(view as ViewType)) return {};
+
+  return {
+    view: view as ViewType,
+    treinoTab: view === 'treino' && ['hoje', 'semana', 'progresso'].includes(sub) ? (sub as TreinoTab) : undefined,
+    dietaTab: view === 'dieta' && ['agua', 'refeicoes', 'corpo'].includes(sub) ? (sub as DietaTab) : undefined,
+  };
+}
+
 function getStreakStyle(days: number): { color: string; badge: string } {
   if (days >= 60) return { color: 'var(--load)', badge: '60 dias 🏆' };
   if (days >= 45) return { color: 'var(--accent)', badge: '45 dias ⚡' };
@@ -226,9 +239,10 @@ export default function App() {
     weeklyPlan: [],
     templates: [],
   });
-  const [currentView, setCurrentView] = useState<ViewType>('treino');
-  const [treinoTab, setTreinoTab] = useState<TreinoTab>('hoje');
-  const [dietaTab, setDietaTab] = useState<DietaTab>('agua');
+  // Nascem com o que está no endereço: recarregar a página mantém a tela e a aba
+  const [currentView, setCurrentView] = useState<ViewType>(() => routeFromHash().view ?? 'treino');
+  const [treinoTab, setTreinoTab] = useState<TreinoTab>(() => routeFromHash().treinoTab ?? 'hoje');
+  const [dietaTab, setDietaTab] = useState<DietaTab>(() => routeFromHash().dietaTab ?? 'agua');
 
   // Tema: "noite" (azul de madrugada) ou "cal" (quase branco com limão)
   const [theme, setTheme] = useState<'noite' | 'cal'>(
@@ -364,20 +378,14 @@ export default function App() {
   // voltar do celular saindo do app.
   useEffect(() => {
     const applyHash = () => {
-      const [view, sub] = window.location.hash.replace(/^#\/?/, '').split('/');
-      const views: ViewType[] = ['treino', 'dieta', 'ia', 'settings'];
-      if (!views.includes(view as ViewType)) return;
+      const route = routeFromHash();
+      if (!route.view) return;
 
-      setCurrentView(view as ViewType);
-      if (view === 'treino' && ['hoje', 'semana', 'progresso'].includes(sub)) {
-        setTreinoTab(sub as TreinoTab);
-      }
-      if (view === 'dieta' && ['agua', 'refeicoes', 'corpo'].includes(sub)) {
-        setDietaTab(sub as DietaTab);
-      }
+      setCurrentView(route.view);
+      if (route.treinoTab) setTreinoTab(route.treinoTab);
+      if (route.dietaTab) setDietaTab(route.dietaTab);
     };
 
-    applyHash();
     window.addEventListener('hashchange', applyHash);
     return () => window.removeEventListener('hashchange', applyHash);
   }, []);
