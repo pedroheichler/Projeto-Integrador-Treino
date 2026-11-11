@@ -38,3 +38,8 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 }
+
+// Só o jar executável (bootJar); o jar "plain" não é usado
+tasks.named('jar') {
+    enabled = false
+}
