@@ -263,13 +263,34 @@ const auth = {
   },
 };
 
-// ── Arquivos (ainda não suportado no beta) ────────────────────────────────
+// ── Arquivos (fotos de perfil e de squad) ─────────────────────────────────
 
 const storage = {
-  from(_bucket: string) {
+  from(bucket: string) {
     return {
-      async upload(..._args: unknown[]): Promise<Result> {
-        return { data: null, error: new ApiError('Envio de imagens ainda não está disponível na versão beta.') };
+      /** Envia o arquivo para /files/{bucket}/{path}; o mesmo endereço serve para exibir. */
+      async upload(path: string, file: Blob, options?: { contentType?: string; [key: string]: unknown }): Promise<Result> {
+        const headers: Record<string, string> = {
+          'Content-Type': options?.contentType || file.type || 'application/octet-stream',
+        };
+        if (currentSession) headers.Authorization = `Bearer ${currentSession.access_token}`;
+
+        let response: Response;
+        try {
+          response = await fetch(`${API_URL}/files/${bucket}/${path}`, { method: 'POST', headers, body: file });
+        } catch {
+          return { data: null, error: new ApiError('Sem conexão com o servidor.', 'network') };
+        }
+        if (response.ok) return { data: { path }, error: null };
+
+        let json: { error?: { message?: string; code?: string } } = {};
+        try {
+          json = await response.json();
+        } catch {
+          // Resposta sem corpo JSON
+        }
+        const message = json.error?.message ?? `Erro ${response.status}`;
+        return { data: null, error: new ApiError(message, json.error?.code, response.status) };
       },
     };
   },

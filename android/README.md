@@ -1,6 +1,6 @@
-# Kronos — App Android (beta)
+# Kronos — App Android
 
-App Android em Java que roda o Kronos. O backend também é Java e roda dentro do próprio app.
+App Android em Java que roda o Kronos. O backend também é Java e roda dentro do próprio app, com os dados no aparelho. Para usar o servidor no lugar dele, veja [../server/README.md](../server/README.md).
 
 ```
 ┌──────────────── App Android (Java) ─────────────────┐
@@ -10,7 +10,8 @@ App Android em Java que roda o Kronos. O backend também é Java e roda dentro d
 │   ├─ /           → frontend React (assets/www)      │
 │   ├─ /api/auth   → AuthService   (cadastro/login)   │
 │   ├─ /api/query  → QueryService  (CRUD genérico)    │
-│   └─ /api/rpc/*  → RpcService    (regras de negócio)│
+│   ├─ /api/rpc/*  → RpcService    (regras de negócio)│
+│   └─ /api/files  → fotos de perfil e de squad       │
 │                         │                           │
 │                    SQLite (Database)                │
 └─────────────────────────────────────────────────────┘
@@ -25,26 +26,29 @@ O Gradle roda o `npm run build:android` sozinho quando algum arquivo do frontend
 
 Pela linha de comando: `cd android` e depois `gradlew assembleDebug`. O APK sai em `app/build/outputs/apk/debug/`.
 
-## O que funciona no beta
+## O que funciona no modo local
 
 - Cadastro e login (senha guardada como hash PBKDF2, sessão por token)
-- Treino: plano da semana, exercícios, séries/cargas, sessão de treino, sequência, progresso
+- Treino: plano da semana, exercícios, séries/cargas, sessão de treino, progresso
+- Sequência de dias: só conta o dia com o treino concluído por inteiro (RN01)
+- Recordes: série concluída de maior carga e, no empate, mais repetições (RN02)
 - Dieta: água, refeições, rotina alimentar, favoritos, peso e medidas
-- Squads: criar e entrar por código (só entre contas do mesmo aparelho, porque o banco é local)
+- Squads: criar e entrar por código; o admin gera ou revoga o código e remove membros (RN04)
+- Fotos de perfil e de squad
 
-**Ainda não tem:** IA (chat, análise de comida, resumo semanal) e envio de fotos de perfil ou de squad. O app mostra "indisponível na versão beta".
+No modo local os squads só funcionam entre contas do mesmo aparelho, porque o banco fica nele, e a IA fica desligada (a chave da IA não pode ir dentro do app). Os dois passam a funcionar com o app ligado ao servidor.
 
 ## Estrutura do código Java
 
 | Arquivo | Função |
 |---|---|
 | `KronosApplication` | Sobe o backend quando o app abre |
-| `MainActivity` | WebView com o frontend, botão voltar, barras do sistema |
-| `backend/ApiServer` | Servidor HTTP: rotas da API e arquivos do frontend |
+| `MainActivity` | WebView com o frontend, botão voltar, barras do sistema, seletor de arquivos |
+| `backend/ApiServer` | Servidor HTTP: rotas da API, fotos e arquivos do frontend |
 | `backend/Database` | Esquema SQLite (tabelas do app) |
 | `backend/AuthService` | Cadastro, login, logout, validação de token |
 | `backend/QueryService` | select/insert/update/upsert/delete com filtros, validando tabelas e colunas |
-| `backend/RpcService` | create_squad, join_squad_by_code, finish_workout_session etc. |
+| `backend/RpcService` | Regras de negócio: sequência, recordes, convite e membros do squad, sessão de treino, dieta |
 
 ## Desenvolvendo o frontend com hot reload
 
@@ -57,9 +61,33 @@ npm run dev
 
 O Vite repassa `/api` para o backend do emulador.
 
-## Próximos passos sugeridos
+## Ligado ao servidor
 
-1. Levar o backend para um servidor (Spring Boot + PostgreSQL). Assim os squads funcionam entre celulares diferentes, e o frontend só precisa de `VITE_API_URL`.
-2. IA pelo backend (rota `/api/ai`)
-3. Upload de imagens
-4. Trocar telas da WebView por telas nativas em Java, uma de cada vez
+Com o arquivo `.env.android` na raiz do projeto apontando para o servidor, a interface passa a falar com ele em vez do backend embutido:
+
+```
+VITE_API_URL=https://seu-endereco/api
+```
+
+O Gradle refaz a interface quando esse arquivo muda. O backend embutido continua no app, só deixa de ser chamado.
+
+## Gerar o APK de release assinado
+
+1. Crie a chave de assinatura uma única vez (guarde o arquivo e as senhas: sem eles não dá para atualizar o app depois):
+
+   ```
+   keytool -genkeypair -v -keystore android/kronos-release.jks -alias kronos -keyalg RSA -keysize 2048 -validity 10000
+   ```
+
+2. Crie o arquivo `android/keystore.properties` (ele não vai para o repositório):
+
+   ```
+   storeFile=kronos-release.jks
+   storePassword=senha-do-arquivo
+   keyAlias=kronos
+   keyPassword=senha-da-chave
+   ```
+
+3. Gere o APK: `cd android` e depois `gradlew assembleRelease`. Ele sai em `app/build/outputs/apk/release/`.
+
+Sem o `keystore.properties`, o `assembleRelease` gera um APK sem assinatura, que o Android não instala.

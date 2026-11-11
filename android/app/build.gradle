@@ -4,9 +4,28 @@ plugins {
     id 'com.android.application'
 }
 
+// Assinatura do APK de release: os dados ficam em android/keystore.properties,
+// que não vai para o repositório. Sem o arquivo, o release sai sem assinatura.
+def keystoreFile = rootProject.file('keystore.properties')
+def keystore = new Properties()
+if (keystoreFile.exists()) {
+    keystoreFile.withInputStream { keystore.load(it) }
+}
+
 android {
     namespace 'com.kronos.app'
     compileSdk 36
+
+    signingConfigs {
+        release {
+            if (keystoreFile.exists()) {
+                storeFile rootProject.file(keystore['storeFile'])
+                storePassword keystore['storePassword']
+                keyAlias keystore['keyAlias']
+                keyPassword keystore['keyPassword']
+            }
+        }
+    }
 
     defaultConfig {
         applicationId 'com.kronos.app'
@@ -19,6 +38,9 @@ android {
     buildTypes {
         release {
             minifyEnabled false
+            if (keystoreFile.exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
@@ -49,7 +71,10 @@ tasks.register('buildFrontend', Exec) {
     inputs.files(
         new File(frontendDir, 'index.html'),
         new File(frontendDir, 'vite.config.ts'),
-        new File(frontendDir, 'package.json')
+        new File(frontendDir, 'package.json'),
+        // Endereço do servidor (VITE_API_URL): mudar o arquivo refaz o frontend
+        new File(frontendDir, '.env'),
+        new File(frontendDir, '.env.android')
     )
     outputs.dir('src/main/assets/www')
 }

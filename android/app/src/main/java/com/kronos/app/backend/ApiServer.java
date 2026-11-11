@@ -2,15 +2,20 @@ package com.kronos.app.backend;
 
 import android.content.Context;
 import android.content.res.AssetManager;
+import android.database.Cursor;
 import android.database.SQLException;
 import android.util.Log;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -24,7 +29,8 @@ import fi.iki.elonen.NanoHTTPD;
  *   <li>POST /api/auth/signup | /api/auth/login | /api/auth/logout, GET /api/auth/me</li>
  *   <li>POST /api/query — CRUD genérico (ver {@link QueryService})</li>
  *   <li>POST /api/rpc/{nome} — funções do servidor (ver {@link RpcService})</li>
- *   <li>POST /api/ai — IA (ainda não disponível no beta)</li>
+ *   <li>POST e GET /api/files/{bucket}/{dono}/{nome} — fotos de perfil e de squad</li>
+ *   <li>POST /api/ai — IA: só funciona com o servidor do Kronos, onde fica a chave</li>
  *   <li>qualquer outro caminho — arquivos do frontend (assets/www)</li>
  * </ul>
  */
@@ -33,7 +39,11 @@ public class ApiServer extends NanoHTTPD {
     private static final String TAG = "KronosApi";
     public static final int DEFAULT_PORT = 8765;
 
+    private static final int MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
     private final AssetManager assets;
+    private final File uploads;
+    private final Database database;
     private final AuthService auth;
     private final QueryService queries;
     private final RpcService rpc;
@@ -41,6 +51,8 @@ public class ApiServer extends NanoHTTPD {
     private ApiServer(int port, Context context, Database database) {
         super("127.0.0.1", port);
         this.assets = context.getAssets();
+        this.uploads = new File(context.getFilesDir(), "uploads");
+        this.database = database;
         this.auth = new AuthService(database);
         this.queries = new QueryService(database);
         this.rpc = new RpcService(database);
@@ -67,6 +79,7 @@ public class ApiServer extends NanoHTTPD {
     @Override
     public Response serve(IHTTPSession session) {
         String uri = session.getUri();
+        if (uri.startsWith("/api/files/")) return files(session, uri.substring("/api/files/".length()));
         if (uri.startsWith("/api/")) return api(session, uri.substring("/api".length()));
         return asset(uri);
     }
@@ -98,7 +111,8 @@ public class ApiServer extends NanoHTTPD {
                     break;
                 case "/ai":
                     requireUser(token);
-                    throw new ApiException(503, "A IA ainda não está disponível na versão beta.");
+                    throw new ApiException(503,
+                        "A IA funciona quando o app está ligado ao servidor do Kronos.", "ia_desligada");
                 default:
                     if (path.startsWith("/rpc/")) {
                         data = rpc.call(path.substring("/rpc/".length()), requireUser(token), body);
@@ -178,6 +192,113 @@ public class ApiServer extends NanoHTTPD {
             if (status.getRequestStatus() == code) return status;
         }
         return Response.Status.INTERNAL_ERROR;
+    }
+
+    // ── Fotos ─────────────────────────────────────────────────────────────
+
+    /**
+     * Fotos de perfil (avatars/{id do usuário}/avatar) e de squad
+     * (squad-icons/{id do squad}/icon), guardadas na pasta de arquivos do app.
+     * Ver é livre (a tag img não manda o token); enviar exige ser o dono da
+     * foto ou o admin do squad.
+     */
+    private Response files(IHTTPSession session, String path) {
+        try {
+            String[] parts = path.split("/");
+            if (parts.length != 3) throw new ApiException(404, "Arquivo não encontrado.");
+            for (String part : parts) {
+                // Só letras, números e hífen: nada de ".." para sair da pasta
+                if (!part.matches("[A-Za-z0-9-]+")) throw new ApiException(404, "Arquivo não encontrado.");
+            }
+            File file = new File(new File(new File(uploads, parts[0]), parts[1]), parts[2]);
+
+            if (session.getMethod() == Method.GET) {
+                if (!file.isFile()) throw new ApiException(404, "Arquivo não encontrado.");
+                byte[] head = new byte[12];
+                int read;
+                try (InputStream in = new FileInputStream(file)) {
+                    read = in.read(head);
+                }
+                Response response = newFixedLengthResponse(
+                    Response.Status.OK, imageType(head, read), new FileInputStream(file), file.length());
+                response.addHeader("Cache-Control", "max-age=3600");
+                response.addHeader("X-Content-Type-Options", "nosniff");
+                return response;
+            }
+
+            String userId = requireUser(bearerToken(session));
+            checkUploadPermission(userId, parts[0], parts[1], parts[2]);
+
+            byte[] data = readBytes(session);
+            if (data.length == 0) throw new ApiException(400, "Arquivo vazio.");
+            // O tipo vem do conteúdo, não do que o cliente declarou
+            if (imageType(data, data.length) == null) throw new ApiException(400, "Use uma imagem JPG, PNG ou WebP.");
+
+            File folder = file.getParentFile();
+            if (folder == null || (!folder.isDirectory() && !folder.mkdirs())) {
+                throw new IOException("Não foi possível criar a pasta de fotos");
+            }
+            try (FileOutputStream out = new FileOutputStream(file)) {
+                out.write(data);
+            }
+
+            JSONObject out = new JSONObject();
+            out.put("data", JSONObject.NULL);
+            return json(200, out);
+        } catch (ApiException e) {
+            return error(e.status, e.getMessage(), e.code);
+        } catch (Exception e) {
+            Log.e(TAG, "Erro inesperado em /files/" + path, e);
+            return error(500, "Erro interno no servidor.", "internal");
+        }
+    }
+
+    private void checkUploadPermission(String userId, String bucket, String owner, String name) throws ApiException {
+        boolean allowed;
+        if (bucket.equals("avatars") && name.equals("avatar")) {
+            allowed = owner.equals(userId);
+        } else if (bucket.equals("squad-icons") && name.equals("icon")) {
+            // RN04: só o admin troca a foto do squad
+            try (Cursor c = database.getReadableDatabase().rawQuery(
+                    "SELECT 1 FROM squad_members WHERE squad_id = ? AND user_id = ? AND role = 'admin'",
+                    new String[]{owner, userId})) {
+                allowed = c.moveToFirst();
+            }
+        } else {
+            throw new ApiException(404, "Destino de arquivo desconhecido.");
+        }
+        if (!allowed) throw new ApiException(403, "Você não pode trocar essa imagem.", "nao_permitido");
+    }
+
+    private static byte[] readBytes(IHTTPSession session) throws IOException, ApiException {
+        String length = session.getHeaders().get("content-length");
+        int size = length == null ? 0 : Integer.parseInt(length.trim());
+        if (size > MAX_UPLOAD_BYTES) throw new ApiException(413, "A imagem deve ter no máximo 5 MB.");
+
+        byte[] buffer = new byte[Math.max(size, 0)];
+        InputStream in = session.getInputStream();
+        int read = 0;
+        while (read < buffer.length) {
+            int n = in.read(buffer, read, buffer.length - read);
+            if (n < 0) break;
+            read += n;
+        }
+        return read == buffer.length ? buffer : Arrays.copyOf(buffer, read);
+    }
+
+    /** Reconhece JPG, PNG e WebP pelos primeiros bytes; null se não for imagem. */
+    private static String imageType(byte[] data, int length) {
+        if (length >= 3 && (data[0] & 0xFF) == 0xFF && (data[1] & 0xFF) == 0xD8 && (data[2] & 0xFF) == 0xFF) {
+            return "image/jpeg";
+        }
+        if (length >= 4 && (data[0] & 0xFF) == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G') {
+            return "image/png";
+        }
+        if (length >= 12 && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F'
+                && data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P') {
+            return "image/webp";
+        }
+        return null;
     }
 
     // ── Frontend ──────────────────────────────────────────────────────────

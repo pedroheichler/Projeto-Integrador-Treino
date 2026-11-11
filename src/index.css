@@ -18,7 +18,8 @@
 
   --text:          #E6EAF2;
   --text-2:        #8792A6;
-  --text-3:        #4C596E;
+  /* Texto de apoio: contraste de pelo menos 4,5:1 sobre o fundo e os cartões */
+  --text-3:        #808BA0;
 
   /* Acento principal */
   --accent:        #6E8FF7;
@@ -60,17 +61,19 @@
 
   --text:          #14140F;
   --text-2:        #6B6A5E;
-  --text-3:        #A5A398;
+  /* Texto de apoio: contraste de pelo menos 4,5:1 sobre o fundo e os cartões */
+  --text-3:        #6F6E62;
 
-  --accent:        #7E9204;
-  --accent-hover:  #6B7D03;
-  --accent-soft:   rgba(126, 146, 4, 0.12);
-  --accent-line:   rgba(126, 146, 4, 0.3);
+  /* Limão escurecido: 5:1 como texto sobre o fundo e com texto branco em cima */
+  --accent:        #5E6E00;
+  --accent-hover:  #4F5D00;
+  --accent-soft:   rgba(94, 110, 0, 0.12);
+  --accent-line:   rgba(94, 110, 0, 0.3);
   --on-accent:     #FFFFFF;
 
   /* No claro a carga usa o mesmo limão */
-  --load:          #7E9204;
-  --load-soft:     rgba(126, 146, 4, 0.12);
+  --load:          #5E6E00;
+  --load-soft:     rgba(94, 110, 0, 0.12);
 
   /* Botão primário é tinta preta */
   --btn-bg:        #14140F;
@@ -79,7 +82,7 @@
 
   --danger:        #C0362C;
   --danger-soft:   rgba(192, 54, 44, 0.1);
-  --success:       #7E9204;
+  --success:       #5E6E00;
 
   --font-display:  'Space Grotesk', 'Inter', system-ui, sans-serif;
   --font-body:     'Inter', system-ui, sans-serif;

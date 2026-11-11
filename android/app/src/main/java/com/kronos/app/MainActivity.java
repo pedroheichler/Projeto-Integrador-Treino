@@ -10,6 +10,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.WindowInsets;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -25,8 +26,11 @@ import android.window.OnBackInvokedDispatcher;
 public class MainActivity extends Activity {
 
     private static final int BACKGROUND = 0xFF0B0F1A;
+    private static final int PICK_FILE_REQUEST = 1001;
 
     private WebView webView;
+    /** Resposta que a página espera depois de abrir o seletor de arquivos */
+    private ValueCallback<Uri[]> filePicked;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -41,7 +45,23 @@ public class MainActivity extends Activity {
         settings.setDomStorageEnabled(true); // localStorage: sessão, tema e fila offline
         settings.setMediaPlaybackRequiresUserGesture(false);
 
-        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            // Sem isso, <input type="file"> não faz nada na WebView
+            // (trocar foto de perfil, foto da refeição para a IA)
+            @Override
+            public boolean onShowFileChooser(
+                    WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (filePicked != null) filePicked.onReceiveValue(null);
+                filePicked = callback;
+                try {
+                    startActivityForResult(params.createIntent(), PICK_FILE_REQUEST);
+                    return true;
+                } catch (ActivityNotFoundException noPicker) {
+                    filePicked = null;
+                    return false;
+                }
+            }
+        });
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -112,6 +132,19 @@ public class MainActivity extends Activity {
     private void goBackOrFinish() {
         if (webView.canGoBack()) webView.goBack();
         else finish();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode != PICK_FILE_REQUEST) {
+            super.onActivityResult(requestCode, resultCode, data);
+            return;
+        }
+        if (filePicked != null) {
+            // null quando o usuário cancela: a página precisa da resposta mesmo assim
+            filePicked.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
+            filePicked = null;
+        }
     }
 
     @Override
