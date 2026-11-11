@@ -139,13 +139,54 @@ function parseRestSeconds(rest: string): number {
   return s ? parseInt(s[1]) : 60;
 }
 
+// ── Cópia local do plano ──
+// Com o backend num servidor, o app precisa abrir mesmo sem conexão (academia
+// no subsolo). A última versão do plano fica guardada no aparelho; as séries
+// marcadas offline vão para a fila (services/offlineQueue.ts) e sobem depois.
+interface WorkspaceCache {
+  squadId: string;
+  isPersonal: boolean;
+  squad?: Squad;
+  /** Dia em que a cópia foi guardada: o "concluído" só vale para esse dia */
+  date?: string;
+  streak?: number;
+  memberStreaks?: Record<string, number>;
+}
+
+const workspaceCacheKey = (userId: string) => `kronos_plano_${userId}`;
+
+function readWorkspaceCache(userId: string): WorkspaceCache | null {
+  try {
+    const raw = localStorage.getItem(workspaceCacheKey(userId));
+    return raw ? (JSON.parse(raw) as WorkspaceCache) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveWorkspaceCache(userId: string, cache: WorkspaceCache) {
+  try {
+    localStorage.setItem(workspaceCacheKey(userId), JSON.stringify(cache));
+  } catch {
+    // Sem espaço no aparelho: o app continua, só não abre offline
+  }
+}
+
+// Falha de rede ou servidor fora do ar (diferente de "não encontrado" ou "sem permissão")
+function isOffline(error: { code?: string; status?: number } | null): boolean {
+  return !!error && (error.code === 'network' || (error.status ?? 0) >= 500);
+}
+
 // Descobre em qual espaço o usuário treina: uma equipe de verdade tem
 // prioridade sobre o espaço pessoal. Retorna null se ele não tiver nenhum.
+// Lança o erro quando não deu para consultar: sem isso, uma queda de rede
+// parecia "usuário sem espaço" e o app criava um espaço pessoal duplicado.
 async function findWorkspace(userId: string): Promise<{ id: string; personal: boolean } | null> {
-  const { data } = await api
+  const { data, error } = await api
     .from('squad_members')
     .select('squad_id, squads(is_personal)')
     .eq('user_id', userId);
+  if (error) throw error;
 
   const rows = (data ?? []).map(r => {
     // O join vem como objeto (FK many-to-one), mas o tipo gerado diz array
@@ -218,6 +259,11 @@ export default function App() {
   const [isPersonal, setIsPersonal] = useState(false);
   const [checkingSquad, setCheckingSquad] = useState(true);
   const [squadLoading, setSquadLoading] = useState(false);
+  // Não deu para falar com o servidor e não há cópia local do plano
+  const [workspaceError, setWorkspaceError] = useState(false);
+  // Muda para refazer a carga (botão "Tentar de novo" e volta da conexão)
+  const [reloadTick, setReloadTick] = useState(0);
+  const showingCachedPlan = useRef(false);
   const [selectedWeekDay, setSelectedWeekDay] = useState<number>(() => (new Date().getDay() + 6) % 7);
   const [activeDayIndex, setActiveDayIndex] = useState<number>(() => (new Date().getDay() + 6) % 7);
   const [showDayPicker, setShowDayPicker] = useState(false);
@@ -366,21 +412,46 @@ export default function App() {
   }
 
   const resolveWorkspace = async () => {
-    const ws = await findWorkspace(session.user.id);
+    let ws: { id: string; personal: boolean } | null;
+    try {
+      ws = await findWorkspace(session.user.id);
+    } catch {
+      // Sem conexão: abre com o último espaço conhecido em vez de criar outro
+      const cached = readWorkspaceCache(session.user.id);
+      if (cached) {
+        setSquadId(cached.squadId);
+        setIsPersonal(cached.isPersonal);
+      }
+      setWorkspaceError(!cached);
+      setCheckingSquad(false);
+      return;
+    }
 
+    setWorkspaceError(false);
     if (ws) {
       setSquadId(ws.id);
       setIsPersonal(ws.personal);
     } else {
       // Sem nenhum espaço: cria um pessoal para treinar sozinho
-      setSquadId(await createPersonalWorkspace());
+      const created = await createPersonalWorkspace();
+      setSquadId(created);
       setIsPersonal(true);
+      setWorkspaceError(!created);
     }
     setCheckingSquad(false);
   };
 
   resolveWorkspace();
-}, [session?.user?.id]);
+}, [session?.user?.id, reloadTick]);
+
+// Voltou a conexão enquanto a tela mostrava a cópia local: recarrega do servidor
+useEffect(() => {
+  const onOnline = () => {
+    if (showingCachedPlan.current || workspaceError) setReloadTick(tick => tick + 1);
+  };
+  window.addEventListener('online', onOnline);
+  return () => window.removeEventListener('online', onOnline);
+}, [workspaceError]);
 
 useEffect(() => {
   if (!squadId || !session) return;
@@ -393,7 +464,7 @@ useEffect(() => {
 
     // ── Batch 1: 3 requisições em paralelo ──────────────────────────────────
     const [
-      { data: squadData },
+      { data: squadData, error: squadError },
       { data: membersData },
       { data: daysData },
     ] = await Promise.all([
@@ -402,7 +473,27 @@ useEffect(() => {
       api.from('workout_days').select('id, name, focus, day_order').eq('squad_id', squadId).order('day_order'),
     ]);
 
-    if (!squadData || !daysData) { setSquadLoading(false); return; }
+    if (!squadData || !daysData) {
+      const cached = readWorkspaceCache(currentSession.user.id);
+      if (isOffline(squadError) && cached?.squad?.id === squadId) {
+        // Sem conexão: mostra a última cópia do plano. O "concluído" de outro dia não vale hoje.
+        const plan = cached.squad;
+        setSquad(cached.date === today ? plan : {
+          ...plan,
+          weeklyPlan: plan.weeklyPlan.map(day => ({
+            ...day,
+            exercises: day.exercises.map(ex => ({ ...ex, completed: false })),
+          })),
+        });
+        setDiasTreinados(cached.streak ?? 0);
+        setMemberStreaks(cached.memberStreaks ?? {});
+        showingCachedPlan.current = true;
+        notify('Sem conexão com o servidor. Mostrando o último plano salvo.');
+      }
+      setSquadLoading(false);
+      return;
+    }
+    showingCachedPlan.current = false;
 
     const dayIds = daysData.map((d: any) => d.id);
     const memberUserIds = (membersData || []).map((m: any) => m.user_id);
@@ -483,7 +574,20 @@ useEffect(() => {
   };
 
   load().catch(console.error);
-}, [squadId]);
+}, [squadId, reloadTick]);
+
+// Guarda a última versão do plano: sem conexão, o app abre com ela
+useEffect(() => {
+  if (!session?.user?.id || !squad.id || squad.id !== squadId) return;
+  saveWorkspaceCache(session.user.id, {
+    squadId: squad.id,
+    isPersonal,
+    squad,
+    date: localDateStr(),
+    streak: diasTreinados,
+    memberStreaks,
+  });
+}, [session?.user?.id, squadId, isPersonal, squad, diasTreinados, memberStreaks]);
 
   const fetchDiasTreinados = useCallback(async () => {
     if (!session?.user?.id) return;
@@ -773,6 +877,24 @@ useEffect(() => {
 
   if (!session) return <Login />;
 
+  if (workspaceError) return (
+    <div
+      role="alert"
+      style={{ color: 'var(--text)', padding: 40, background: 'var(--bg)', minHeight: '100vh', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}
+    >
+      <h1 style={{ fontSize: 20, fontWeight: 700 }}>Sem conexão com o servidor</h1>
+      <p style={{ color: 'var(--text-2)', maxWidth: 420 }}>
+        Não foi possível carregar o seu treino. Confira a internet e tente de novo.
+      </p>
+      <button
+        onClick={() => { setCheckingSquad(true); setReloadTick(tick => tick + 1); }}
+        style={{ minHeight: 44, padding: '0 20px', borderRadius: 12, background: 'var(--accent)', color: 'var(--btn-fg)', fontWeight: 600 }}
+      >
+        Tentar de novo
+      </button>
+    </div>
+  );
+
   const buildWeeklyReport = async () => {
     setWeekReportLoading(true);
     try {
@@ -787,7 +909,13 @@ useEffect(() => {
   };
 
   const refreshSquad = async () => {
-    const ws = await findWorkspace(session.user.id);
+    let ws: { id: string; personal: boolean } | null;
+    try {
+      ws = await findWorkspace(session.user.id);
+    } catch {
+      notify('Sem conexão com o servidor. Tente de novo em instantes.');
+      return;
+    }
 
     if (ws) {
       setSquadId(ws.id);
@@ -899,7 +1027,8 @@ useEffect(() => {
       completed: false,
     }));
 
-    await Promise.all(newExercises.map(ex => addExerciseToDB(day.id, ex)));
+    // Um por vez, na ordem: a lista do dia é ordenada pela hora de criação
+    for (const ex of newExercises) await addExerciseToDB(day.id, ex);
 
     // Atualiza o foco do dia
     await api.from('workout_days').update({ focus }).eq('id', day.id);
@@ -1386,7 +1515,7 @@ useEffect(() => {
                     <div className="flex items-baseline gap-1.5 mt-2.5">
                       <span className="font-display text-[30px] font-extrabold tabular-nums tracking-[-0.03em] text-[var(--text)]">{diasTreinados}</span>
                       <span className="text-[13px] font-medium text-[var(--text-2)]">
-                        dias <span className="inline-block animate-pulse">🔥</span>
+                        {diasTreinados === 1 ? 'dia' : 'dias'} <span className="inline-block animate-pulse">🔥</span>
                       </span>
                     </div>
                     {badge && (
@@ -1549,7 +1678,7 @@ useEffect(() => {
                       <p className="text-xs text-[var(--text-2)] uppercase tracking-widest font-medium mb-3">Sequência</p>
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-3xl font-bold tabular-nums" style={{ color }}>{diasTreinados}</span>
-                        <span className="text-sm text-[var(--text-2)]">dias</span>
+                        <span className="text-sm text-[var(--text-2)]">{diasTreinados === 1 ? 'dia' : 'dias'}</span>
                       </div>
                       {badge && (
                         <p className="text-xs mt-2 font-medium" style={{ color }}>{badge}</p>
