@@ -49,7 +49,10 @@ tasks.register('buildFrontend', Exec) {
     inputs.files(
         new File(frontendDir, 'index.html'),
         new File(frontendDir, 'vite.config.ts'),
-        new File(frontendDir, 'package.json')
+        new File(frontendDir, 'package.json'),
+        // Endereço do servidor (VITE_API_URL): mudar o arquivo refaz o frontend
+        new File(frontendDir, '.env'),
+        new File(frontendDir, '.env.android')
     )
     outputs.dir('src/main/assets/www')
 }
