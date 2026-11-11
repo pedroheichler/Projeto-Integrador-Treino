@@ -5,3 +5,7 @@ local.properties
 *.iml
 # Gerado pelo "npm run build:android"
 app/src/main/assets/www/
+# Chave de assinatura do release (nunca vai para o repositório)
+keystore.properties
+*.jks
+*.keystore

@@ -70,3 +70,24 @@ VITE_API_URL=https://seu-endereco/api
 ```
 
 O Gradle refaz a interface quando esse arquivo muda. O backend embutido continua no app, só deixa de ser chamado.
+
+## Gerar o APK de release assinado
+
+1. Crie a chave de assinatura uma única vez (guarde o arquivo e as senhas: sem eles não dá para atualizar o app depois):
+
+   ```
+   keytool -genkeypair -v -keystore android/kronos-release.jks -alias kronos -keyalg RSA -keysize 2048 -validity 10000
+   ```
+
+2. Crie o arquivo `android/keystore.properties` (ele não vai para o repositório):
+
+   ```
+   storeFile=kronos-release.jks
+   storePassword=senha-do-arquivo
+   keyAlias=kronos
+   keyPassword=senha-da-chave
+   ```
+
+3. Gere o APK: `cd android` e depois `gradlew assembleRelease`. Ele sai em `app/build/outputs/apk/release/`.
+
+Sem o `keystore.properties`, o `assembleRelease` gera um APK sem assinatura, que o Android não instala.

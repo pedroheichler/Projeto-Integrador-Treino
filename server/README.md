@@ -35,7 +35,7 @@ cd server
 
 Sobe o servidor em `http://localhost:8080` com um PostgreSQL embutido. Os dados ficam em `build/dev-postgres` e são mantidos entre uma execução e outra.
 
-Para ver a interface no navegador usando esse servidor, crie na raiz do projeto o arquivo `.env.local` com a linha abaixo e rode `npm run dev` em outro terminal:
+Para ver a interface no navegador usando esse servidor, crie na raiz do projeto o arquivo `.env.development` (só vale para o `npm run dev`, não entra no app) com a linha abaixo e rode `npm run dev` em outro terminal:
 
 ```
 VITE_API_URL=http://localhost:8080/api
