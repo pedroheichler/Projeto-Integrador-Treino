@@ -1,0 +1,35 @@
+# Servidor do Kronos + PostgreSQL, para rodar tudo com "docker compose up".
+#
+# A senha do banco e a chave da IA vêm do ambiente (ou de um arquivo .env
+# nesta pasta, que não vai para o repositório).
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: kronos
+      POSTGRES_USER: kronos
+      POSTGRES_PASSWORD: ${KRONOS_DB_PASSWORD:?defina KRONOS_DB_PASSWORD}
+    volumes:
+      - kronos-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kronos -d kronos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      KRONOS_DB_URL: jdbc:postgresql://db:5432/kronos
+      KRONOS_DB_USER: kronos
+      KRONOS_DB_PASSWORD: ${KRONOS_DB_PASSWORD}
+      # Sem a chave, o servidor funciona e só o Kronos IA fica desligado
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "8080:8080"
+
+volumes:
+  kronos-db:

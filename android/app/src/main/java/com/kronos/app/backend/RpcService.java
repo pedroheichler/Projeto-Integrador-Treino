@@ -53,10 +53,16 @@ public class RpcService {
                 return joinSquadByCode(userId, args.optString("p_code"));
             case "finish_workout_session":
                 return finishWorkoutSession(userId, args.optString("p_session_id"));
+            case "regenerate_invite_code":
+                return regenerateInviteCode(userId, args.optString("p_squad_id"));
+            case "revoke_invite_code":
+                return revokeInviteCode(userId, args.optString("p_squad_id"));
+            case "remove_squad_member":
+                return removeSquadMember(userId, args.optString("p_squad_id"), args.optString("p_user_id"));
+            case "completed_training_days":
+                return completedTrainingDays(userId, args.optJSONArray("p_user_ids"), args.optString("p_from"));
             case "exercise_personal_records":
-                return query(
-                    "SELECT exercise_id, MAX(weight) AS best_weight FROM set_logs " +
-                    "WHERE user_id = ? AND weight IS NOT NULL GROUP BY exercise_id", userId);
+                return personalRecords(userId);
             case "ensure_meal_routine":
                 return ensureMealRoutine(userId);
             case "save_meal_routine":
@@ -115,6 +121,7 @@ public class RpcService {
 
     private String joinSquadByCode(String userId, String code) throws ApiException {
         String normalized = code.trim().toUpperCase();
+        if (normalized.isEmpty()) throw new ApiException(400, "codigo_invalido", "codigo_invalido");
         SQLiteDatabase db = database.getReadableDatabase();
 
         String squadId;
@@ -130,6 +137,45 @@ public class RpcService {
         return squadId;
     }
 
+    /** RN04: só o admin do squad gera um código de convite novo (o antigo deixa de valer). */
+    private String regenerateInviteCode(String userId, String squadId) throws ApiException {
+        requireAdmin(userId, squadId);
+        String[] code = new String[1];
+        write(db -> {
+            code[0] = uniqueInviteCode(db);
+            db.execSQL("UPDATE squads SET invite_code = ? WHERE id = ?", new Object[]{code[0], squadId});
+        });
+        return code[0];
+    }
+
+    /** RN04: só o admin revoga o código; sem código ninguém novo entra no squad. */
+    private Object revokeInviteCode(String userId, String squadId) throws ApiException {
+        requireAdmin(userId, squadId);
+        write(db -> db.execSQL("UPDATE squads SET invite_code = NULL WHERE id = ?", new Object[]{squadId}));
+        return JSONObject.NULL;
+    }
+
+    /** RN04: só o admin remove membros. Ele mesmo sai pelo "Sair do squad". */
+    private Object removeSquadMember(String userId, String squadId, String memberId) throws ApiException {
+        requireAdmin(userId, squadId);
+        if (memberId.equals(userId)) {
+            throw new ApiException(400, "O admin não pode remover a si mesmo.", "admin_nao_removivel");
+        }
+        write(db -> db.execSQL(
+            "DELETE FROM squad_members WHERE squad_id = ? AND user_id = ?", new Object[]{squadId, memberId}));
+        return JSONObject.NULL;
+    }
+
+    private void requireAdmin(String userId, String squadId) throws ApiException {
+        try (Cursor c = database.getReadableDatabase().rawQuery(
+                "SELECT role FROM squad_members WHERE squad_id = ? AND user_id = ?",
+                new String[]{squadId, userId})) {
+            if (!c.moveToFirst() || !"admin".equals(c.getString(0))) {
+                throw new ApiException(403, "Só o administrador do squad pode fazer isso.", "apenas_admin");
+            }
+        }
+    }
+
     private String uniqueInviteCode(SQLiteDatabase db) {
         // Sem 0/O e 1/I para não confundir ao digitar
         String alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -140,6 +186,63 @@ public class RpcService {
                 if (!c.moveToFirst()) return code.toString();
             }
         }
+    }
+
+    // ── Sequência e recordes ──────────────────────────────────────────────
+
+    /**
+     * RN01: dias em que o treino foi concluído por inteiro. Um dia só conta
+     * quando todos os exercícios do treino feito naquela data estão marcados
+     * como concluídos; exercícios criados depois da data não entram na conta.
+     * Devolve os dias do próprio usuário e de quem divide um squad com ele.
+     */
+    private JSONArray completedTrainingDays(String userId, JSONArray userIds, String from)
+            throws JSONException {
+        Set<String> allowed = new HashSet<>();
+        allowed.add(userId);
+        try (Cursor c = database.getReadableDatabase().rawQuery(
+                "SELECT DISTINCT other.user_id FROM squad_members mine " +
+                "JOIN squad_members other ON other.squad_id = mine.squad_id WHERE mine.user_id = ?",
+                new String[]{userId})) {
+            while (c.moveToNext()) allowed.add(c.getString(0));
+        }
+
+        List<String> args = new ArrayList<>();
+        if (userIds == null || userIds.length() == 0) {
+            args.add(userId);
+        } else {
+            for (int i = 0; i < userIds.length(); i++) {
+                String id = userIds.optString(i);
+                if (allowed.contains(id) && !args.contains(id)) args.add(id);
+            }
+        }
+        if (args.isEmpty()) return new JSONArray();
+
+        String users = Rows.placeholders(args.size());
+        args.add(from == null || from.isEmpty() ? "0000-01-01" : from);
+        return query(
+            "SELECT DISTINCT p.user_id, p.date FROM exercise_progress p " +
+            "JOIN exercises e ON e.id = p.exercise_id " +
+            "WHERE p.completed = 1 AND p.user_id IN (" + users + ") AND p.date >= ? " +
+            "GROUP BY p.user_id, p.date, e.workout_day_id " +
+            "HAVING COUNT(DISTINCT p.exercise_id) >= (" +
+            "  SELECT COUNT(*) FROM exercises planned " +
+            "  WHERE planned.workout_day_id = e.workout_day_id AND substr(planned.created_at, 1, 10) <= p.date)",
+            args.toArray(new String[0]));
+    }
+
+    /**
+     * RN02: recorde de cada exercício = série concluída com a maior carga;
+     * no empate de carga vale a que teve mais repetições.
+     */
+    private JSONArray personalRecords(String userId) throws JSONException {
+        return query(
+            "SELECT s.exercise_id, s.weight AS best_weight, MAX(s.reps) AS best_reps FROM set_logs s " +
+            "WHERE s.user_id = ? AND s.done = 1 AND s.weight IS NOT NULL AND s.weight = (" +
+            "  SELECT MAX(top.weight) FROM set_logs top " +
+            "  WHERE top.user_id = s.user_id AND top.exercise_id = s.exercise_id " +
+            "  AND top.done = 1 AND top.weight IS NOT NULL) " +
+            "GROUP BY s.exercise_id, s.weight", userId);
     }
 
     // ── Sessão de treino ──────────────────────────────────────────────────

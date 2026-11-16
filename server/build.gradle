@@ -1,0 +1,45 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.1.2'
+}
+
+group = 'com.kronos'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // As versões das bibliotecas do Spring vêm do BOM do Spring Boot
+    implementation platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+    testImplementation platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    // SDK oficial da Anthropic (Kronos IA)
+    implementation 'com.anthropic:anthropic-java:3.8.0'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    // PostgreSQL de verdade nos testes e no "bootTestRun", sem precisar instalar nada
+    testImplementation 'io.zonky.test:embedded-postgres:2.2.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// Só o jar executável (bootJar); o jar "plain" não é usado
+tasks.named('jar') {
+    enabled = false
+}

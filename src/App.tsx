@@ -96,6 +96,33 @@ function calcStreak(dates: string[], trainingDays: number[] = []): number {
   return streak;
 }
 
+// RN01: só entra na sequência o dia em que o treino foi concluído por inteiro.
+// A conta é feita no servidor (todos os exercícios do treino do dia marcados).
+// Devolve null quando não deu para consultar (ex: sem conexão).
+async function fetchCompletedDays(userIds: string[], from: string): Promise<Record<string, string[]> | null> {
+  const { data, error } = await api.rpc<{ user_id: string; date: string }[]>('completed_training_days', {
+    p_user_ids: userIds,
+    p_from: from,
+  });
+  if (error) return null;
+  const byUser: Record<string, string[]> = {};
+  for (const row of data ?? []) (byUser[row.user_id] ??= []).push(row.date);
+  return byUser;
+}
+
+// Lê a tela e a aba do endereço (#/dieta/corpo). Devolve só o que for válido.
+function routeFromHash(): { view?: ViewType; treinoTab?: TreinoTab; dietaTab?: DietaTab } {
+  const [view, sub] = window.location.hash.replace(/^#\/?/, '').split('/');
+  const views: ViewType[] = ['treino', 'dieta', 'ia', 'settings'];
+  if (!views.includes(view as ViewType)) return {};
+
+  return {
+    view: view as ViewType,
+    treinoTab: view === 'treino' && ['hoje', 'semana', 'progresso'].includes(sub) ? (sub as TreinoTab) : undefined,
+    dietaTab: view === 'dieta' && ['agua', 'refeicoes', 'corpo'].includes(sub) ? (sub as DietaTab) : undefined,
+  };
+}
+
 function getStreakStyle(days: number): { color: string; badge: string } {
   if (days >= 60) return { color: 'var(--load)', badge: '60 dias 🏆' };
   if (days >= 45) return { color: 'var(--accent)', badge: '45 dias ⚡' };
@@ -103,6 +130,18 @@ function getStreakStyle(days: number): { color: string; badge: string } {
   if (days >= 15) return { color: 'var(--load)', badge: '15 dias 🔥' };
   if (days >= 7)  return { color: 'var(--load)', badge: '7 dias 🏅' };
   return { color: 'var(--text)', badge: '' };
+}
+
+// RN02: recorde = série concluída com a maior carga; no empate, mais repetições
+interface PersonalRecord {
+  weight: number;
+  reps: number | null;
+}
+
+function beatsRecord(weight: number, reps: number | null, record?: PersonalRecord): boolean {
+  if (!record) return true;
+  if (weight !== record.weight) return weight > record.weight;
+  return reps != null && reps > (record.reps ?? 0);
 }
 
 function parseRestSeconds(rest: string): number {
@@ -113,13 +152,54 @@ function parseRestSeconds(rest: string): number {
   return s ? parseInt(s[1]) : 60;
 }
 
+// ── Cópia local do plano ──
+// Com o backend num servidor, o app precisa abrir mesmo sem conexão (academia
+// no subsolo). A última versão do plano fica guardada no aparelho; as séries
+// marcadas offline vão para a fila (services/offlineQueue.ts) e sobem depois.
+interface WorkspaceCache {
+  squadId: string;
+  isPersonal: boolean;
+  squad?: Squad;
+  /** Dia em que a cópia foi guardada: o "concluído" só vale para esse dia */
+  date?: string;
+  streak?: number;
+  memberStreaks?: Record<string, number>;
+}
+
+const workspaceCacheKey = (userId: string) => `kronos_plano_${userId}`;
+
+function readWorkspaceCache(userId: string): WorkspaceCache | null {
+  try {
+    const raw = localStorage.getItem(workspaceCacheKey(userId));
+    return raw ? (JSON.parse(raw) as WorkspaceCache) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveWorkspaceCache(userId: string, cache: WorkspaceCache) {
+  try {
+    localStorage.setItem(workspaceCacheKey(userId), JSON.stringify(cache));
+  } catch {
+    // Sem espaço no aparelho: o app continua, só não abre offline
+  }
+}
+
+// Falha de rede ou servidor fora do ar (diferente de "não encontrado" ou "sem permissão")
+function isOffline(error: { code?: string; status?: number } | null): boolean {
+  return !!error && (error.code === 'network' || (error.status ?? 0) >= 500);
+}
+
 // Descobre em qual espaço o usuário treina: uma equipe de verdade tem
 // prioridade sobre o espaço pessoal. Retorna null se ele não tiver nenhum.
+// Lança o erro quando não deu para consultar: sem isso, uma queda de rede
+// parecia "usuário sem espaço" e o app criava um espaço pessoal duplicado.
 async function findWorkspace(userId: string): Promise<{ id: string; personal: boolean } | null> {
-  const { data } = await api
+  const { data, error } = await api
     .from('squad_members')
     .select('squad_id, squads(is_personal)')
     .eq('user_id', userId);
+  if (error) throw error;
 
   const rows = (data ?? []).map(r => {
     // O join vem como objeto (FK many-to-one), mas o tipo gerado diz array
@@ -159,9 +239,10 @@ export default function App() {
     weeklyPlan: [],
     templates: [],
   });
-  const [currentView, setCurrentView] = useState<ViewType>('treino');
-  const [treinoTab, setTreinoTab] = useState<TreinoTab>('hoje');
-  const [dietaTab, setDietaTab] = useState<DietaTab>('agua');
+  // Nascem com o que está no endereço: recarregar a página mantém a tela e a aba
+  const [currentView, setCurrentView] = useState<ViewType>(() => routeFromHash().view ?? 'treino');
+  const [treinoTab, setTreinoTab] = useState<TreinoTab>(() => routeFromHash().treinoTab ?? 'hoje');
+  const [dietaTab, setDietaTab] = useState<DietaTab>(() => routeFromHash().dietaTab ?? 'agua');
 
   // Tema: "noite" (azul de madrugada) ou "cal" (quase branco com limão)
   const [theme, setTheme] = useState<'noite' | 'cal'>(
@@ -192,6 +273,11 @@ export default function App() {
   const [isPersonal, setIsPersonal] = useState(false);
   const [checkingSquad, setCheckingSquad] = useState(true);
   const [squadLoading, setSquadLoading] = useState(false);
+  // Não deu para falar com o servidor e não há cópia local do plano
+  const [workspaceError, setWorkspaceError] = useState(false);
+  // Muda para refazer a carga (botão "Tentar de novo" e volta da conexão)
+  const [reloadTick, setReloadTick] = useState(0);
+  const showingCachedPlan = useRef(false);
   const [selectedWeekDay, setSelectedWeekDay] = useState<number>(() => (new Date().getDay() + 6) % 7);
   const [activeDayIndex, setActiveDayIndex] = useState<number>(() => (new Date().getDay() + 6) % 7);
   const [showDayPicker, setShowDayPicker] = useState(false);
@@ -220,7 +306,7 @@ export default function App() {
   const [setLoadData, setSetLoadData] = useState<Record<string, Array<{ weight: string; reps: string; rpe: string }>>>({});
   const [prIds, setPrIds] = useState<Set<string>>(new Set());
   // Maior peso já registrado por exercício, vindo do banco
-  const [personalRecords, setPersonalRecords] = useState<Record<string, number>>({});
+  const [personalRecords, setPersonalRecords] = useState<Record<string, PersonalRecord>>({});
   // Resumo da última sessão de cada exercício (ex: "4×10 · 75 kg")
   const [previousLoads, setPreviousLoads] = useState<Record<string, string>>({});
   // Modo treino em andamento
@@ -292,20 +378,14 @@ export default function App() {
   // voltar do celular saindo do app.
   useEffect(() => {
     const applyHash = () => {
-      const [view, sub] = window.location.hash.replace(/^#\/?/, '').split('/');
-      const views: ViewType[] = ['treino', 'dieta', 'ia', 'settings'];
-      if (!views.includes(view as ViewType)) return;
+      const route = routeFromHash();
+      if (!route.view) return;
 
-      setCurrentView(view as ViewType);
-      if (view === 'treino' && ['hoje', 'semana', 'progresso'].includes(sub)) {
-        setTreinoTab(sub as TreinoTab);
-      }
-      if (view === 'dieta' && ['agua', 'refeicoes', 'corpo'].includes(sub)) {
-        setDietaTab(sub as DietaTab);
-      }
+      setCurrentView(route.view);
+      if (route.treinoTab) setTreinoTab(route.treinoTab);
+      if (route.dietaTab) setDietaTab(route.dietaTab);
     };
 
-    applyHash();
     window.addEventListener('hashchange', applyHash);
     return () => window.removeEventListener('hashchange', applyHash);
   }, []);
@@ -340,21 +420,46 @@ export default function App() {
   }
 
   const resolveWorkspace = async () => {
-    const ws = await findWorkspace(session.user.id);
+    let ws: { id: string; personal: boolean } | null;
+    try {
+      ws = await findWorkspace(session.user.id);
+    } catch {
+      // Sem conexão: abre com o último espaço conhecido em vez de criar outro
+      const cached = readWorkspaceCache(session.user.id);
+      if (cached) {
+        setSquadId(cached.squadId);
+        setIsPersonal(cached.isPersonal);
+      }
+      setWorkspaceError(!cached);
+      setCheckingSquad(false);
+      return;
+    }
 
+    setWorkspaceError(false);
     if (ws) {
       setSquadId(ws.id);
       setIsPersonal(ws.personal);
     } else {
       // Sem nenhum espaço: cria um pessoal para treinar sozinho
-      setSquadId(await createPersonalWorkspace());
+      const created = await createPersonalWorkspace();
+      setSquadId(created);
       setIsPersonal(true);
+      setWorkspaceError(!created);
     }
     setCheckingSquad(false);
   };
 
   resolveWorkspace();
-}, [session?.user?.id]);
+}, [session?.user?.id, reloadTick]);
+
+// Voltou a conexão enquanto a tela mostrava a cópia local: recarrega do servidor
+useEffect(() => {
+  const onOnline = () => {
+    if (showingCachedPlan.current || workspaceError) setReloadTick(tick => tick + 1);
+  };
+  window.addEventListener('online', onOnline);
+  return () => window.removeEventListener('online', onOnline);
+}, [workspaceError]);
 
 useEffect(() => {
   if (!squadId || !session) return;
@@ -367,7 +472,7 @@ useEffect(() => {
 
     // ── Batch 1: 3 requisições em paralelo ──────────────────────────────────
     const [
-      { data: squadData },
+      { data: squadData, error: squadError },
       { data: membersData },
       { data: daysData },
     ] = await Promise.all([
@@ -376,7 +481,27 @@ useEffect(() => {
       api.from('workout_days').select('id, name, focus, day_order').eq('squad_id', squadId).order('day_order'),
     ]);
 
-    if (!squadData || !daysData) { setSquadLoading(false); return; }
+    if (!squadData || !daysData) {
+      const cached = readWorkspaceCache(currentSession.user.id);
+      if (isOffline(squadError) && cached?.squad?.id === squadId) {
+        // Sem conexão: mostra a última cópia do plano. O "concluído" de outro dia não vale hoje.
+        const plan = cached.squad;
+        setSquad(cached.date === today ? plan : {
+          ...plan,
+          weeklyPlan: plan.weeklyPlan.map(day => ({
+            ...day,
+            exercises: day.exercises.map(ex => ({ ...ex, completed: false })),
+          })),
+        });
+        setDiasTreinados(cached.streak ?? 0);
+        setMemberStreaks(cached.memberStreaks ?? {});
+        showingCachedPlan.current = true;
+        notify('Sem conexão com o servidor. Mostrando o último plano salvo.');
+      }
+      setSquadLoading(false);
+      return;
+    }
+    showingCachedPlan.current = false;
 
     const dayIds = daysData.map((d: any) => d.id);
     const memberUserIds = (membersData || []).map((m: any) => m.user_id);
@@ -388,16 +513,12 @@ useEffect(() => {
       { data: exercisesData },
       { data: progressData },
       { data: profilesData },
-      { data: allProgressData },
-      { data: membersProgressData },
+      completedDays,
     ] = await Promise.all([
       api.from('exercises').select('id, name, sets, reps, rest, notes, workout_day_id').in('workout_day_id', dayIds).order('created_at', { ascending: true }),
       api.from('exercise_progress').select('exercise_id, completed').eq('user_id', currentSession.user.id).eq('date', today),
       api.from('profiles').select('id, name, avatar_url').in('id', allUserIds),
-      api.from('exercise_progress').select('date').eq('user_id', currentSession.user.id).eq('completed', true).gte('date', oneYearAgo),
-      memberUserIds.length > 0
-        ? api.from('exercise_progress').select('user_id, date').in('user_id', memberUserIds).eq('completed', true).gte('date', oneYearAgo)
-        : Promise.resolve({ data: [] }),
+      fetchCompletedDays(allUserIds, oneYearAgo),
     ]);
 
     // ── Montar estado completo de uma vez ────────────────────────────────────
@@ -449,26 +570,32 @@ useEffect(() => {
       .filter((i: number) => i !== -1);
 
     // Dias treinados (streak consecutivo) — dados já vêm no batch 2
-    const myDates = (allProgressData || []).map((r: any) => r.date as string);
-    setDiasTreinados(calcStreak(myDates, trainingDayIndices));
+    setDiasTreinados(calcStreak(completedDays?.[currentSession.user.id] ?? [], trainingDayIndices));
 
     // Streak consecutivo por membro do squad (mesmo plano = mesmos dias de treino)
     const streaksByMember: Record<string, number> = {};
-    const mpData = (membersProgressData || []) as { user_id: string; date: string }[];
-    const datesByMember: Record<string, string[]> = {};
-    for (const row of mpData) {
-      if (!datesByMember[row.user_id]) datesByMember[row.user_id] = [];
-      datesByMember[row.user_id].push(row.date);
-    }
     for (const uid of memberUserIds) {
-      streaksByMember[uid] = calcStreak(datesByMember[uid] || [], trainingDayIndices);
+      streaksByMember[uid] = calcStreak(completedDays?.[uid] ?? [], trainingDayIndices);
     }
     setMemberStreaks(streaksByMember);
     setSquadLoading(false);
   };
 
   load().catch(console.error);
-}, [squadId]);
+}, [squadId, reloadTick]);
+
+// Guarda a última versão do plano: sem conexão, o app abre com ela
+useEffect(() => {
+  if (!session?.user?.id || !squad.id || squad.id !== squadId) return;
+  saveWorkspaceCache(session.user.id, {
+    squadId: squad.id,
+    isPersonal,
+    squad,
+    date: localDateStr(),
+    streak: diasTreinados,
+    memberStreaks,
+  });
+}, [session?.user?.id, squadId, isPersonal, squad, diasTreinados, memberStreaks]);
 
   const fetchDiasTreinados = useCallback(async () => {
     if (!session?.user?.id) return;
@@ -478,14 +605,10 @@ useEffect(() => {
       .filter(i => i !== -1);
 
     const oneYearAgo = localDateStr(new Date(Date.now() - 365 * 24 * 60 * 60 * 1000));
-    const { data } = await api
-      .from('exercise_progress')
-      .select('date')
-      .eq('user_id', session.user.id)
-      .eq('completed', true)
-      .gte('date', oneYearAgo);
-    const myDates = (data || []).map((r: any) => r.date as string);
-    setDiasTreinados(calcStreak(myDates, trainingDayIndices));
+    const completedDays = await fetchCompletedDays([session.user.id], oneYearAgo);
+    // Sem conexão: mantém a sequência que já estava na tela
+    if (!completedDays) return;
+    setDiasTreinados(calcStreak(completedDays[session.user.id] ?? [], trainingDayIndices));
   }, [session?.user?.id, squad.weeklyPlan]);
 
   const fetchProgressStats = useCallback(async () => {
@@ -701,9 +824,12 @@ useEffect(() => {
       }
 
       if (prs) {
-        const map: Record<string, number> = {};
-        for (const row of prs as { exercise_id: string; best_weight: number }[]) {
-          map[row.exercise_id] = Number(row.best_weight);
+        const map: Record<string, PersonalRecord> = {};
+        for (const row of prs as { exercise_id: string; best_weight: number; best_reps: number | null }[]) {
+          map[row.exercise_id] = {
+            weight: Number(row.best_weight),
+            reps: row.best_reps != null ? Number(row.best_reps) : null,
+          };
         }
         setPersonalRecords(map);
       }
@@ -759,6 +885,24 @@ useEffect(() => {
 
   if (!session) return <Login />;
 
+  if (workspaceError) return (
+    <div
+      role="alert"
+      style={{ color: 'var(--text)', padding: 40, background: 'var(--bg)', minHeight: '100vh', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}
+    >
+      <h1 style={{ fontSize: 20, fontWeight: 700 }}>Sem conexão com o servidor</h1>
+      <p style={{ color: 'var(--text-2)', maxWidth: 420 }}>
+        Não foi possível carregar o seu treino. Confira a internet e tente de novo.
+      </p>
+      <button
+        onClick={() => { setCheckingSquad(true); setReloadTick(tick => tick + 1); }}
+        style={{ minHeight: 44, padding: '0 20px', borderRadius: 12, background: 'var(--accent)', color: 'var(--btn-fg)', fontWeight: 600 }}
+      >
+        Tentar de novo
+      </button>
+    </div>
+  );
+
   const buildWeeklyReport = async () => {
     setWeekReportLoading(true);
     try {
@@ -773,7 +917,13 @@ useEffect(() => {
   };
 
   const refreshSquad = async () => {
-    const ws = await findWorkspace(session.user.id);
+    let ws: { id: string; personal: boolean } | null;
+    try {
+      ws = await findWorkspace(session.user.id);
+    } catch {
+      notify('Sem conexão com o servidor. Tente de novo em instantes.');
+      return;
+    }
 
     if (ws) {
       setSquadId(ws.id);
@@ -790,8 +940,13 @@ useEffect(() => {
     setIsEditorOpen(true);
   };
 
-  const saveExercise = (updatedEx: Exercise) => {
+  const saveExercise = (edited: Exercise) => {
     if (!editingExercise) return;
+    // Campo de séries vazio ou fora da faixa: fica entre 1 e 20
+    const updatedEx = {
+      ...edited,
+      sets: Number.isFinite(edited.sets) ? Math.min(20, Math.max(1, edited.sets)) : 1,
+    };
     saveExerciseToDB(updatedEx).catch(err => {
       console.error(err);
       notify('Não foi possível salvar o exercício.');
@@ -885,7 +1040,8 @@ useEffect(() => {
       completed: false,
     }));
 
-    await Promise.all(newExercises.map(ex => addExerciseToDB(day.id, ex)));
+    // Um por vez, na ordem: a lista do dia é ordenada pela hora de criação
+    for (const ex of newExercises) await addExerciseToDB(day.id, ex);
 
     // Atualiza o foco do dia
     await api.from('workout_days').update({ focus }).eq('id', day.id);
@@ -986,10 +1142,14 @@ useEffect(() => {
       const secs = parseRestSeconds(exercise.rest);
       if (secs > 0) setRestTimer({ exerciseId: exercise.id, remaining: secs, total: secs });
 
-      // Recorde: compara com o maior peso já registrado no banco
-      const weight = parseFloat((setLoadData[exercise.id]?.[setIndex]?.weight ?? '').replace(',', '.'));
-      if (!isNaN(weight) && weight > 0 && weight > (personalRecords[exercise.id] ?? 0)) {
-        setPersonalRecords(prev => ({ ...prev, [exercise.id]: weight }));
+      // Recorde (RN02): a série concluída supera a maior carga já registrada,
+      // ou repete a carga com mais repetições
+      const typed = setLoadData[exercise.id]?.[setIndex];
+      const weight = parseFloat((typed?.weight ?? '').replace(',', '.'));
+      const repsTyped = parseInt(typed?.reps ?? '', 10);
+      const reps = Number.isFinite(repsTyped) ? repsTyped : null;
+      if (!isNaN(weight) && weight > 0 && beatsRecord(weight, reps, personalRecords[exercise.id])) {
+        setPersonalRecords(prev => ({ ...prev, [exercise.id]: { weight, reps } }));
         setPrIds(prev => new Set(prev).add(exercise.id));
         setTimeout(() => setPrIds(prev => { const s = new Set(prev); s.delete(exercise.id); return s; }), 6000);
       }
@@ -1368,7 +1528,7 @@ useEffect(() => {
                     <div className="flex items-baseline gap-1.5 mt-2.5">
                       <span className="font-display text-[30px] font-extrabold tabular-nums tracking-[-0.03em] text-[var(--text)]">{diasTreinados}</span>
                       <span className="text-[13px] font-medium text-[var(--text-2)]">
-                        dias <span className="inline-block animate-pulse">🔥</span>
+                        {diasTreinados === 1 ? 'dia' : 'dias'} <span className="inline-block animate-pulse">🔥</span>
                       </span>
                     </div>
                     {badge && (
@@ -1411,7 +1571,8 @@ useEffect(() => {
                         value={currentDayPlan.focus || ''}
                         onChange={(e) => updateDayFocus(activeDayId, e.target.value)}
                         placeholder="FOCO DO TREINO"
-                        className="bg-transparent border-none text-[var(--text)] p-0 focus:ring-0 outline-none placeholder:text-[var(--border)] w-full uppercase"
+                        aria-label={`Foco do treino de ${currentDayPlan.name}`}
+                        className="bg-transparent border-none text-[var(--text)] p-0 focus:ring-0 outline-none placeholder:text-[var(--text-3)] w-full uppercase"
                         style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 900, fontSize: 'clamp(1.6rem, 5vw, 2.4rem)', letterSpacing: '0.06em' }}
                       />
                       {squad.templates.length > 0 && (
@@ -1531,7 +1692,7 @@ useEffect(() => {
                       <p className="text-xs text-[var(--text-2)] uppercase tracking-widest font-medium mb-3">Sequência</p>
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-3xl font-bold tabular-nums" style={{ color }}>{diasTreinados}</span>
-                        <span className="text-sm text-[var(--text-2)]">dias</span>
+                        <span className="text-sm text-[var(--text-2)]">{diasTreinados === 1 ? 'dia' : 'dias'}</span>
                       </div>
                       {badge && (
                         <p className="text-xs mt-2 font-medium" style={{ color }}>{badge}</p>
@@ -1611,6 +1772,8 @@ useEffect(() => {
                     const isSelected = idx === selectedWeekDay;
                     return (
                       <button key={day.id} onClick={() => setSelectedWeekDay(idx)}
+                        aria-label={`${day.name}${isToday ? ', hoje' : ''}${isDone ? ', treino concluído' : ''}`}
+                        aria-pressed={isSelected}
                         className="flex flex-col items-center gap-1 shrink-0 transition-all"
                         style={{ minWidth: 44 }}>
                         <div className={`w-9 h-9 rounded-full flex items-center justify-center transition-all text-xs font-semibold
@@ -1649,12 +1812,14 @@ useEffect(() => {
                             value={day.focus || ''}
                             onChange={(e) => updateDayFocus(day.id, e.target.value)}
                             placeholder="Foco do treino..."
-                            className="bg-transparent border-none text-xs text-[var(--text-2)] p-0 focus:ring-0 outline-none placeholder:text-[var(--border-strong)] w-full"
+                            aria-label={`Foco do treino de ${day.name}`}
+                            className="bg-transparent border-none text-xs text-[var(--text-2)] p-0 focus:ring-0 outline-none placeholder:text-[var(--text-3)] w-full"
                           />
                         </div>
                         <button onClick={() => addExercise(day.id)}
-                          className="w-8 h-8 rounded-full bg-[var(--surface-3)] flex items-center justify-center text-[var(--text-2)] shrink-0 ml-2">
-                          <Plus size={14} />
+                          aria-label={`Adicionar exercício em ${day.name}`}
+                          className="w-11 h-11 rounded-full bg-[var(--surface-3)] flex items-center justify-center text-[var(--text-2)] shrink-0 ml-2">
+                          <Plus size={14} aria-hidden="true" />
                         </button>
                       </div>
                       {/* Exercises */}
@@ -1668,12 +1833,14 @@ useEffect(() => {
                               </div>
                               <div className="flex gap-2 shrink-0">
                                 <button onClick={() => openEditor(day.id, ex)}
-                                  className="w-8 h-8 rounded-lg bg-[var(--surface-3)] flex items-center justify-center text-[var(--text-2)]">
-                                  <Edit3 size={13} />
+                                  aria-label={`Editar ${ex.name}`}
+                                  className="w-11 h-11 rounded-lg bg-[var(--surface-3)] flex items-center justify-center text-[var(--text-2)]">
+                                  <Edit3 size={13} aria-hidden="true" />
                                 </button>
                                 <button onClick={() => deleteExercise(day.id, ex.id)}
-                                  className="w-8 h-8 rounded-lg bg-[var(--surface-3)] flex items-center justify-center text-[var(--text-3)]">
-                                  <Trash2 size={13} />
+                                  aria-label={`Excluir ${ex.name}`}
+                                  className="w-11 h-11 rounded-lg bg-[var(--surface-3)] flex items-center justify-center text-[var(--text-3)]">
+                                  <Trash2 size={13} aria-hidden="true" />
                                 </button>
                               </div>
                             </div>
@@ -1706,7 +1873,8 @@ useEffect(() => {
                             value={day.focus || ''}
                             onChange={(e) => updateDayFocus(day.id, e.target.value)}
                             placeholder="Foco..."
-                            className="bg-transparent border-none text-[10px] text-[var(--text-2)] p-0 focus:ring-0 outline-none placeholder:text-[var(--border-strong)] w-full"
+                            aria-label={`Foco do treino de ${day.name}`}
+                            className="bg-transparent border-none text-[10px] text-[var(--text-2)] p-0 focus:ring-0 outline-none placeholder:text-[var(--text-3)] w-full"
                           />
                           {squad.templates.length > 0 && (
                             <div className="absolute top-full left-0 mt-1 w-44 bg-[var(--surface-2)] border border-[var(--border)] rounded-lg z-30 hidden group-focus-within/focus:block max-h-36 overflow-y-auto">
@@ -1722,8 +1890,9 @@ useEffect(() => {
                         </div>
                       </div>
                       <button onClick={() => addExercise(day.id)}
+                        aria-label={`Adicionar exercício em ${day.name}`}
                         className="p-1.5 rounded-lg text-[var(--text-3)] hover:text-[var(--text-2)] hover:bg-[var(--surface-3)] transition-colors shrink-0">
-                        <Plus size={14} />
+                        <Plus size={14} aria-hidden="true" />
                       </button>
                     </div>
                     <div className="space-y-1.5 flex-1">
@@ -1735,11 +1904,13 @@ useEffect(() => {
                               <p className="text-xs font-medium text-[var(--text)] truncate">{ex.name}</p>
                               <p className="text-[10px] text-[var(--text-3)] mt-0.5">{ex.sets}×{ex.reps} · {ex.rest}</p>
                             </div>
-                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-all shrink-0">
                               <button onClick={(e) => { e.stopPropagation(); openEditor(day.id, ex); }}
-                                className="p-1 text-[var(--text-2)] hover:text-[var(--text)]"><Edit3 size={11} /></button>
+                                aria-label={`Editar ${ex.name}`}
+                                className="p-1 text-[var(--text-2)] hover:text-[var(--text)]"><Edit3 size={11} aria-hidden="true" /></button>
                               <button onClick={(e) => { e.stopPropagation(); deleteExercise(day.id, ex.id); }}
-                                className="p-1 text-[var(--text-2)] hover:text-[var(--danger)]"><Trash2 size={11} /></button>
+                                aria-label={`Excluir ${ex.name}`}
+                                className="p-1 text-[var(--text-2)] hover:text-[var(--danger)]"><Trash2 size={11} aria-hidden="true" /></button>
                             </div>
                           </div>
                         ))
@@ -1949,6 +2120,7 @@ useEffect(() => {
                           Evolução de carga
                         </p>
                         <select
+                          aria-label="Exercício do gráfico de evolução de carga"
                           value={evolutionPick ?? ''}
                           onChange={e => setEvolutionPick(e.target.value)}
                           className="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2.5 py-[7px] text-[11.5px] font-semibold text-[var(--text)] outline-none focus:border-[var(--border-strong)] max-w-[55%] truncate"
@@ -1993,14 +2165,14 @@ useEffect(() => {
                       Recordes pessoais
                     </p>
                     <div className="flex flex-wrap gap-2 mt-3.5">
-                      {Object.entries(personalRecords).map(([exId, kg]) => {
+                      {Object.entries(personalRecords).map(([exId, record]) => {
                         const name = evolution[exId]?.name
                           ?? squad.weeklyPlan.flatMap(d => d.exercises).find(e => e.id === exId)?.name;
                         if (!name) return null;
                         return (
                           <span key={exId}
                             className="rounded-full bg-[var(--accent-soft)] text-[var(--accent)] px-3 py-2 text-[11.5px] font-semibold">
-                            {name} · {kg} kg
+                            {name} · {record.weight} kg{record.reps != null ? ` × ${record.reps}` : ''}
                           </span>
                         );
                       })}
@@ -2128,6 +2300,11 @@ useEffect(() => {
                 theme={theme}
                 onToggleTheme={toggleTheme}
                 onSquadUpdate={(name, icon) => setSquad(prev => ({ ...prev, name, icon }))}
+                onInviteCodeChange={code => setSquad(prev => ({ ...prev, inviteCode: code ?? undefined }))}
+                onMemberRemoved={memberId => setSquad(prev => ({
+                  ...prev,
+                  members: prev.members.filter(m => m.id !== memberId),
+                }))}
                 onLeaveSquad={refreshSquad}
                 onSquadJoined={refreshSquad}
                 onProfileUpdate={(name, avatarUrl) => setSquad(prev => ({
@@ -2168,6 +2345,7 @@ useEffect(() => {
             initial={{ opacity: 0, y: -16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
+            role={toast.kind === 'erro' ? 'alert' : 'status'}
             className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold border ${
               toast.kind === 'ok'
                 ? 'bg-[var(--accent-soft)] border-[var(--accent-line)] text-[var(--accent)]'
@@ -2196,18 +2374,22 @@ useEffect(() => {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="editor-exercicio-titulo"
               className="bg-[var(--surface)] border border-[var(--border)] w-full max-w-md rounded-3xl overflow-hidden shadow-2xl"
             >
               <div className="p-6 border-b border-[var(--border)] flex justify-between items-center">
-                <h3 className="text-xl font-bold">Editar Exercício</h3>
-                <button onClick={() => setIsEditorOpen(false)} className="text-[var(--text-2)] hover:text-[var(--text)] transition-colors">
-                  <Plus className="rotate-45" />
+                <h3 id="editor-exercicio-titulo" className="text-xl font-bold">Editar Exercício</h3>
+                <button onClick={() => setIsEditorOpen(false)} aria-label="Fechar"
+                  className="min-w-11 min-h-11 flex items-center justify-center text-[var(--text-2)] hover:text-[var(--text)] transition-colors">
+                  <Plus className="rotate-45" aria-hidden="true" />
                 </button>
               </div>
               <div className="p-6 space-y-4">
                 <div>
-                  <label className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Nome do Exercício</label>
-                  <input 
+                  <label htmlFor="editor-nome" className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Nome do Exercício</label>
+                  <input id="editor-nome" 
                     type="text" 
                     value={editingExercise.exercise.name}
                     onChange={(e) => setEditingExercise({ ...editingExercise, exercise: { ...editingExercise.exercise, name: e.target.value } })}
@@ -2216,17 +2398,19 @@ useEffect(() => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Séries</label>
-                    <input 
+                    <label htmlFor="editor-series" className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Séries</label>
+                    <input id="editor-series" 
                       type="number" 
-                      value={editingExercise.exercise.sets}
+                      min={1}
+                      max={20}
+                      value={Number.isFinite(editingExercise.exercise.sets) ? editingExercise.exercise.sets : ''}
                       onChange={(e) => setEditingExercise({ ...editingExercise, exercise: { ...editingExercise.exercise, sets: parseInt(e.target.value) } })}
                       className="w-full bg-[var(--surface-3)] border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[var(--accent)] outline-none"
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Reps</label>
-                    <input 
+                    <label htmlFor="editor-reps" className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Reps</label>
+                    <input id="editor-reps" 
                       type="text" 
                       value={editingExercise.exercise.reps}
                       onChange={(e) => setEditingExercise({ ...editingExercise, exercise: { ...editingExercise.exercise, reps: e.target.value } })}
@@ -2235,8 +2419,8 @@ useEffect(() => {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Descanso</label>
-                  <input 
+                  <label htmlFor="editor-descanso" className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Descanso</label>
+                  <input id="editor-descanso" 
                     type="text" 
                     value={editingExercise.exercise.rest}
                     onChange={(e) => setEditingExercise({ ...editingExercise, exercise: { ...editingExercise.exercise, rest: e.target.value } })}
@@ -2244,8 +2428,8 @@ useEffect(() => {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Observações</label>
-                  <textarea 
+                  <label htmlFor="editor-notas" className="text-xs font-bold text-[var(--text-2)] uppercase mb-1 block">Observações</label>
+                  <textarea id="editor-notas" 
                     value={editingExercise.exercise.notes || ''}
                     onChange={(e) => setEditingExercise({ ...editingExercise, exercise: { ...editingExercise.exercise, notes: e.target.value } })}
                     className="w-full bg-[var(--surface-3)] border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[var(--accent)] outline-none h-24 resize-none"
@@ -2443,8 +2627,9 @@ function ExerciseItem({
 
         {showEdit && onEdit && (
           <button onClick={e => { e.stopPropagation(); onEdit(); }}
+            aria-label={`Editar ${exercise.name}`}
             className="text-[var(--text-3)] hover:text-[var(--text-2)] transition-colors shrink-0">
-            <Edit3 size={12} />
+            <Edit3 size={12} aria-hidden="true" />
           </button>
         )}
 
@@ -2475,6 +2660,7 @@ function ExerciseItem({
                     <span className="text-xs font-semibold text-[var(--text-2)]">{i + 1}</span>
                     <input
                       type="number" inputMode="decimal" placeholder="—"
+                      aria-label={`Carga em kg da série ${i + 1}`}
                       value={load.weight}
                       onChange={e => onLoadChange(i, 'weight', e.target.value)}
                       onClick={e => e.stopPropagation()}
@@ -2484,6 +2670,7 @@ function ExerciseItem({
                     />
                     <input
                       type="number" inputMode="numeric" placeholder={exercise.reps}
+                      aria-label={`Repetições da série ${i + 1}`}
                       value={load.reps}
                       onChange={e => onLoadChange(i, 'reps', e.target.value)}
                       onClick={e => e.stopPropagation()}
@@ -2495,11 +2682,13 @@ function ExerciseItem({
                       onChange={e => onLoadChange(i, 'rpe', e.target.value)}
                       onClick={e => e.stopPropagation()}
                       title="Esforço percebido de 1 a 10"
+                      aria-label={`Esforço percebido (RPE) da série ${i + 1}, de 1 a 10`}
                       className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-1.5 py-[9px] text-[13px] font-semibold tabular-nums text-center text-[var(--load)] outline-none focus:border-[var(--border-strong)] transition-colors"
                     />
                     <button
                       onClick={() => onSetToggle(i)}
-                      aria-label="série feita"
+                      aria-label={`Série ${i + 1} feita`}
+                      aria-pressed={done}
                       className="w-[30px] h-[30px] rounded-lg border-[1.5px] flex items-center justify-center transition-all active:scale-90"
                       style={{
                         borderColor: done ? 'var(--accent)' : 'var(--border-strong)',
@@ -2591,6 +2780,7 @@ function LoadTracker({
         <div className="bg-[var(--surface)] border border-[var(--accent-line)] rounded-xl p-4 mb-4 flex gap-2 items-center">
           <input
             autoFocus
+            aria-label="Nome do exercício"
             value={newName}
             onChange={e => setNewName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setNewName(''); setAdding(false); } }}
@@ -2653,7 +2843,8 @@ function LoadTracker({
                   )}
                   <button
                     onClick={() => { if (confirm(`Excluir "${ex.name}" e todo o histórico?`)) onDelete(ex.id); }}
-                    className="text-[var(--border-strong)] hover:text-red-400 transition-colors p-1"
+                    aria-label={`Excluir ${ex.name} e o histórico`}
+                    className="text-[var(--text-3)] hover:text-[var(--danger)] transition-colors p-1"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -2663,11 +2854,12 @@ function LoadTracker({
               {/* Input novo registro */}
               <div className="flex gap-2">
                 <input
+                  aria-label={`Novo registro de carga de ${ex.name}`}
                   value={inputVal}
                   onChange={e => onSetInput(ex.id, e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') onSave(ex.id, inputVal); }}
                   placeholder="Ex: 14kg · 3×10"
-                  className="flex-1 bg-[var(--bg)] border border-[var(--border)] focus:border-[var(--accent-line)] rounded-lg px-3 py-2 text-sm text-[var(--text)] placeholder-[var(--border-strong)] outline-none transition-colors"
+                  className="flex-1 bg-[var(--bg)] border border-[var(--border)] focus:border-[var(--accent-line)] rounded-lg px-3 py-2 text-sm text-[var(--text)] placeholder-[var(--text-3)] outline-none transition-colors"
                 />
                 <button
                   onClick={() => onSave(ex.id, inputVal)}
@@ -2706,7 +2898,7 @@ function LoadTracker({
                           )}
                           <button
                             onClick={() => onDeleteEntry(ex.id, entry.id)}
-                            className="opacity-0 group-hover:opacity-100 text-[var(--border-strong)] hover:text-red-400 transition-all shrink-0"
+                            className="opacity-0 group-hover:opacity-100 text-[var(--text-3)] hover:text-[var(--danger)] transition-all shrink-0"
                           >
                             <Trash2 size={10} />
                           </button>
