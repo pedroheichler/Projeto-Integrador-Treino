@@ -50,10 +50,8 @@ export async function collectWeekFacts(userId: string): Promise<WeekFacts> {
 
   const dias = new Set((prog.data ?? []).map((r: any) => r.date));
 
-  const waterGoal = settings.data?.water_goal_ml ?? 2000;
   const perDay: Record<string, number> = {};
   for (const r of (water.data ?? []) as any[]) perDay[r.date] = (perDay[r.date] ?? 0) + r.ml;
-  const diasComMetaAgua = Object.values(perDay).filter(ml => ml >= waterGoal).length;
 
   const dietRows = (diet.data ?? []) as any[];
   const mediaKcal = dietRows.length
@@ -63,6 +61,10 @@ export async function collectWeekFacts(userId: string): Promise<WeekFacts> {
 
   const weights = (weight.data ?? []).map((r: any) => ({ date: r.date, w: Number(r.weight) }));
   const pesoAtual = weights.length ? weights[weights.length - 1].w : null;
+  // RN03: sem meta manual, usa 35 ml × peso mais recente (ou 2000 ml sem peso)
+  const waterGoal = settings.data?.water_goal_ml
+    ?? (pesoAtual ? Math.round((pesoAtual * 35) / 10) * 10 : 2000);
+  const diasComMetaAgua = Object.values(perDay).filter(ml => ml >= waterGoal).length;
   const pesoVariacao = weights.length >= 2 ? weights[weights.length - 1].w - weights[0].w : null;
 
   // Exercícios cuja carga máxima subiu em relação à semana anterior

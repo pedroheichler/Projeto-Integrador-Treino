@@ -30,6 +30,14 @@ function localDateStr(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** RN03: meta de água sugerida = 35 ml por kg de peso corporal */
+const ML_POR_KG = 35;
+const DEFAULT_WATER_GOAL = 2000;
+function suggestedWaterGoal(weightKg: number | null): number | null {
+  if (weightKg == null || !Number.isFinite(weightKg) || weightKg <= 0) return null;
+  return Math.round((weightKg * ML_POR_KG) / 10) * 10;
+}
+
 function formatMl(ml: number): string {
   return ml >= 1000 ? `${(ml / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} L` : `${ml} ml`;
 }
@@ -81,9 +89,12 @@ interface DietaProps {
 export function Dieta({ session, tab: dietTab, onTabChange: setDietTab }: DietaProps) {
   // ── Hidratação ──
   const [waterEntries, setWaterEntries] = useState<WaterEntry[]>([]);
-  const [waterGoal, setWaterGoal] = useState(2000);
+  // Meta salva manualmente (diet_settings.water_goal_ml); null = nunca salvou
+  const [manualWaterGoal, setManualWaterGoal] = useState<number | null>(null);
+  // Peso mais recente registrado na aba Corpo (body_weight)
+  const [latestWeight, setLatestWeight] = useState<number | null>(null);
   const [editingWaterGoal, setEditingWaterGoal] = useState(false);
-  const [waterGoalInput, setWaterGoalInput] = useState('2000');
+  const [waterGoalInput, setWaterGoalInput] = useState(String(DEFAULT_WATER_GOAL));
   const [customMl, setCustomMl] = useState('');
   const [celebrate, setCelebrate] = useState(false);
 
@@ -203,8 +214,7 @@ export function Dieta({ session, tab: dietTab, onTabChange: setDietTab }: DietaP
       }
       const settings = settingsRes.data;
       if (settings) {
-        setWaterGoal(settings.water_goal_ml ?? 2000);
-        setWaterGoalInput(String(settings.water_goal_ml ?? 2000));
+        setManualWaterGoal(settings.water_goal_ml ?? null);
         if (settings.calorie_goal) setCalorieGoal(settings.calorie_goal);
         if (settings.protein_goal) setProteinGoal(settings.protein_goal);
       }
@@ -212,6 +222,30 @@ export function Dieta({ session, tab: dietTab, onTabChange: setDietTab }: DietaP
     };
     load();
   }, [session?.user?.id, viewDate]);
+
+  // Peso mais recente — recarrega ao voltar para a aba Hidratação,
+  // para refletir um peso que acabou de ser registrado na aba Corpo.
+  useEffect(() => {
+    if (!session || dietTab !== 'agua') return;
+    let cancelled = false;
+    api
+      .from('body_weight')
+      .select('id, date, weight')
+      .eq('user_id', session.user.id)
+      .order('date', { ascending: false })
+      .limit(1)
+      .then(({ data, error: wErr }) => {
+        if (cancelled) return;
+        if (wErr) { console.error('Erro ao carregar peso:', wErr); return; }
+        const row = (data as { weight: number | string }[] | null)?.[0];
+        setLatestWeight(row ? Number(row.weight) : null);
+      });
+    return () => { cancelled = true; };
+  }, [session?.user?.id, dietTab]);
+
+  const suggestedGoal = suggestedWaterGoal(latestWeight);
+  // Prioridade: meta manual > sugestão pelo peso > 2000 ml
+  const waterGoal = manualWaterGoal ?? suggestedGoal ?? DEFAULT_WATER_GOAL;
 
   // ── Derivados ──
   const waterToday = useMemo(
@@ -312,8 +346,8 @@ export function Dieta({ session, tab: dietTab, onTabChange: setDietTab }: DietaP
   };
 
   const saveWaterGoal = async () => {
-    const goal = Math.max(500, Number(waterGoalInput) || 2000);
-    setWaterGoal(goal);
+    const goal = Math.max(500, Number(waterGoalInput) || suggestedGoal || DEFAULT_WATER_GOAL);
+    setManualWaterGoal(goal);
     setEditingWaterGoal(false);
     const { error: upErr } = await api
       .from('diet_settings')
@@ -707,6 +741,24 @@ export function Dieta({ session, tab: dietTab, onTabChange: setDietTab }: DietaP
                 <Droplets size={16} className="text-[var(--accent)]" /> Hidratação
               </h3>
               <p className="text-xs text-[var(--text-2)] mt-0.5">Meta diária de água</p>
+              {suggestedGoal != null ? (
+                <p className="text-[11px] text-[var(--text-3)] mt-1">
+                  Sugerido: {suggestedGoal.toLocaleString('pt-BR')} ml ({ML_POR_KG} ml/kg)
+                  {manualWaterGoal != null && manualWaterGoal !== suggestedGoal && (
+                    <button
+                      type="button"
+                      onClick={() => { setWaterGoalInput(String(suggestedGoal)); setEditingWaterGoal(true); }}
+                      className="ml-2 underline hover:text-[var(--text)]"
+                    >
+                      usar sugestão
+                    </button>
+                  )}
+                </p>
+              ) : (
+                <p className="text-[11px] text-[var(--text-2)] mt-1">
+                  Registre seu peso na aba Corpo para uma meta sugerida ({ML_POR_KG} ml/kg)
+                </p>
+              )}
             </div>
             {editingWaterGoal ? (
               <div className="flex items-center gap-2">
@@ -723,7 +775,7 @@ export function Dieta({ session, tab: dietTab, onTabChange: setDietTab }: DietaP
               </div>
             ) : (
               <button
-                onClick={() => setEditingWaterGoal(true)}
+                onClick={() => { setWaterGoalInput(String(waterGoal)); setEditingWaterGoal(true); }}
                 className="flex items-center gap-1.5 text-xs text-[var(--text-2)] hover:text-[var(--text)] bg-[var(--surface-3)] px-3 py-1.5 rounded-lg transition-all"
               >
                 Meta: {formatMl(waterGoal)} <Pencil size={11} />
