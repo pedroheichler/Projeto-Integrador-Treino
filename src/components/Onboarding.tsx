@@ -59,14 +59,14 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         {/* Tela de escolha */}
         {modo === 'escolha' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <button onClick={() => setModo('criar')}
+            <button type="button" onClick={() => setModo('criar')}
               style={{ padding: '20px 24px', background: 'var(--surface)', border: '1px solid var(--surface-3)', borderRadius: 12, color: '#fff', cursor: 'pointer', textAlign: 'left' }}
               onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
               onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--surface-3)'}>
               <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>💪 Criar um novo squad</div>
               <div style={{ fontSize: 13, color: 'var(--text-2)' }}>Você será o admin e poderá convidar membros</div>
             </button>
-            <button onClick={() => setModo('entrar')}
+            <button type="button" onClick={() => setModo('entrar')}
               style={{ padding: '20px 24px', background: 'var(--surface)', border: '1px solid var(--surface-3)', borderRadius: 12, color: '#fff', cursor: 'pointer', textAlign: 'left' }}
               onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
               onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--surface-3)'}>
@@ -79,16 +79,17 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         {/* Criar squad */}
         {modo === 'criar' && (
           <div>
-            <button onClick={() => setModo('escolha')} style={{ background: 'none', border: 'none', color: 'var(--text-2)', cursor: 'pointer', marginBottom: 20, fontSize: 13 }}>
-              ← Voltar
+            <button type="button" onClick={() => setModo('escolha')} aria-label="Voltar para a escolha de squad"
+              style={{ minHeight: 44, minWidth: 44, padding: '0 8px 0 0', background: 'none', border: 'none', color: 'var(--text-2)', cursor: 'pointer', marginBottom: 8, fontSize: 13 }}>
+              <span aria-hidden="true">←</span> Voltar
             </button>
-            <label style={{ display: 'block', color: '#fff', fontSize: 14, marginBottom: 6 }}>Nome do squad</label>
-            <input value={nome} onChange={e => setNome(e.target.value)}
+            <label htmlFor="onboarding-squad-nome" style={{ display: 'block', color: '#fff', fontSize: 14, marginBottom: 6 }}>Nome do squad</label>
+            <input id="onboarding-squad-nome" value={nome} onChange={e => setNome(e.target.value)}
               placeholder="Ex: Os Brutos do CT"
               style={{ width: '100%', padding: 12, background: 'var(--surface-3)', border: '1px solid var(--border-strong)', borderRadius: 8, color: '#fff', fontSize: 14, marginBottom: 16, boxSizing: 'border-box' }} />
-            {erro && <p style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 12 }}>{erro}</p>}
-            <button onClick={criarSquad} disabled={loading}
-              style={{ width: '100%', padding: 14, background: 'var(--accent)', border: 'none', borderRadius: 8, color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 15, opacity: loading ? 0.6 : 1 }}>
+            {erro && <p role="alert" style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 12 }}>{erro}</p>}
+            <button type="button" onClick={criarSquad} disabled={loading}
+              style={{ width: '100%', minHeight: 44, padding: 14, background: 'var(--accent)', border: 'none', borderRadius: 8, color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 15, opacity: loading ? 0.6 : 1 }}>
               {loading ? 'Criando...' : 'Criar Squad'}
             </button>
           </div>
@@ -97,16 +98,17 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         {/* Entrar no squad */}
         {modo === 'entrar' && (
           <div>
-            <button onClick={() => setModo('escolha')} style={{ background: 'none', border: 'none', color: 'var(--text-2)', cursor: 'pointer', marginBottom: 20, fontSize: 13 }}>
-              ← Voltar
+            <button type="button" onClick={() => setModo('escolha')} aria-label="Voltar para a escolha de squad"
+              style={{ minHeight: 44, minWidth: 44, padding: '0 8px 0 0', background: 'none', border: 'none', color: 'var(--text-2)', cursor: 'pointer', marginBottom: 8, fontSize: 13 }}>
+              <span aria-hidden="true">←</span> Voltar
             </button>
-            <label style={{ display: 'block', color: '#fff', fontSize: 14, marginBottom: 6 }}>Código de convite</label>
-            <input value={codigo} onChange={e => setCodigo(e.target.value)}
+            <label htmlFor="onboarding-squad-codigo" style={{ display: 'block', color: '#fff', fontSize: 14, marginBottom: 6 }}>Código de convite</label>
+            <input id="onboarding-squad-codigo" value={codigo} autoCapitalize="characters" onChange={e => setCodigo(e.target.value)}
               placeholder="Ex: ABC123"
               style={{ width: '100%', padding: 12, background: 'var(--surface-3)', border: '1px solid var(--border-strong)', borderRadius: 8, color: '#fff', fontSize: 14, marginBottom: 16, boxSizing: 'border-box', textTransform: 'uppercase', letterSpacing: 4 }} />
-            {erro && <p style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 12 }}>{erro}</p>}
-            <button onClick={entrarSquad} disabled={loading}
-              style={{ width: '100%', padding: 14, background: 'var(--accent)', border: 'none', borderRadius: 8, color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 15, opacity: loading ? 0.6 : 1 }}>
+            {erro && <p role="alert" style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 12 }}>{erro}</p>}
+            <button type="button" onClick={entrarSquad} disabled={loading}
+              style={{ width: '100%', minHeight: 44, padding: 14, background: 'var(--accent)', border: 'none', borderRadius: 8, color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 15, opacity: loading ? 0.6 : 1 }}>
               {loading ? 'Entrando...' : 'Entrar no Squad'}
             </button>
           </div>

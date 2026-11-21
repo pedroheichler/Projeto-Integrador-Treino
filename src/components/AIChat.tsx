@@ -218,12 +218,13 @@ export function AIChat({ squad, streak, progressStats, onCreateWorkout }: AIChat
           <div className="grid grid-cols-2 gap-2">
             {QUICK_ACTIONS.map(action => (
               <button
+                type="button"
                 key={action.label}
                 onClick={() => send(action.prompt)}
                 disabled={loading}
-                className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 text-left hover:border-[var(--accent-line)] hover:bg-[var(--surface-2)] transition-all group disabled:opacity-50"
+                className="min-h-[44px] bg-[var(--surface)] border border-[var(--border)] rounded-xl p-4 text-left hover:border-[var(--accent-line)] hover:bg-[var(--surface-2)] transition-all group disabled:opacity-50"
               >
-                <Sparkles size={13} className="text-[var(--accent)] mb-2.5" />
+                <Sparkles size={13} aria-hidden="true" className="text-[var(--accent)] mb-2.5" />
                 <p className="text-xs font-semibold text-[var(--text)] group-hover:text-[var(--text)] transition-colors leading-tight">
                   {action.label}
                 </p>
@@ -290,19 +291,20 @@ export function AIChat({ squad, streak, progressStats, onCreateWorkout }: AIChat
                       )}
                       {msg.retryable && lastFailedMsg && (
                         <button
+                          type="button"
                           onClick={() => {
                             setMessages(prev => prev.filter(m => m.id !== msg.id));
                             send(lastFailedMsg);
                           }}
-                          className="flex items-center gap-1.5 mt-2 text-xs text-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                          className="min-h-[44px] flex items-center gap-1.5 mt-2 text-xs text-[var(--accent)] hover:text-[var(--accent)] transition-colors"
                         >
-                          <RotateCcw size={11} />
+                          <RotateCcw size={11} aria-hidden="true" />
                           Tentar novamente
                         </button>
                       )}
                     </>
                   ) : (
-                    <div className="flex gap-1.5 py-0.5 items-center">
+                    <div className="flex gap-1.5 py-0.5 items-center" role="status" aria-label="Assistente digitando">
                       <span className="w-1.5 h-1.5 bg-[var(--accent)] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                       <span className="w-1.5 h-1.5 bg-[var(--accent)] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                       <span className="w-1.5 h-1.5 bg-[var(--accent)] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
@@ -321,20 +323,23 @@ export function AIChat({ squad, streak, progressStats, onCreateWorkout }: AIChat
         <div className="flex gap-2 flex-wrap">
           {QUICK_ACTIONS.map(action => (
             <button
+              type="button"
               key={action.label}
               onClick={() => send(action.prompt)}
               disabled={loading}
-              className="text-xs text-[var(--text-2)] border border-[var(--border)] rounded-full px-3 py-1.5 hover:border-[var(--accent-line)] hover:text-[var(--accent)] transition-colors disabled:opacity-40 whitespace-nowrap"
+              className="min-h-[44px] text-xs text-[var(--text-2)] border border-[var(--border)] rounded-full px-3 py-1.5 hover:border-[var(--accent-line)] hover:text-[var(--accent)] transition-colors disabled:opacity-40 whitespace-nowrap"
             >
               {action.label}
             </button>
           ))}
           <button
+            type="button"
             onClick={() => setMessages([])}
             disabled={loading}
-            className="text-xs text-[var(--text-3)] border border-[var(--border)] rounded-full px-3 py-1.5 hover:border-red-500/30 hover:text-red-400 transition-colors disabled:opacity-40 flex items-center gap-1"
+            aria-label="Limpar conversa"
+            className="min-h-[44px] text-xs text-[var(--text-3)] border border-[var(--border)] rounded-full px-3 py-1.5 hover:border-red-500/30 hover:text-red-400 transition-colors disabled:opacity-40 flex items-center gap-1"
           >
-            <RotateCcw size={10} />
+            <RotateCcw size={10} aria-hidden="true" />
             Limpar
           </button>
         </div>
@@ -359,18 +364,21 @@ export function AIChat({ squad, streak, progressStats, onCreateWorkout }: AIChat
               t.style.height = `${Math.min(t.scrollHeight, 120)}px`;
             }}
             placeholder="Pergunte sobre treino, dieta, progresso..."
+            aria-label="Mensagem para o assistente"
             rows={1}
             className="flex-1 bg-[var(--surface)] border border-[var(--border)] focus:border-[var(--accent-line)] rounded-xl px-4 py-3 text-sm text-[var(--text)] placeholder-[var(--text-3)] outline-none transition-colors resize-none"
             style={{ minHeight: 44, maxHeight: 120 }}
           />
           <button
+            type="button"
             onClick={() => send(input)}
             disabled={!input.trim() || loading}
+            aria-label={loading ? 'Enviando mensagem' : 'Enviar mensagem'}
             className="w-11 h-11 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center justify-center shrink-0"
           >
             {loading
-              ? <Loader2 size={16} className="animate-spin text-[var(--btn-fg)]" />
-              : <Send size={16} className="text-[var(--btn-fg)]" />
+              ? <Loader2 size={16} aria-hidden="true" className="animate-spin text-[var(--btn-fg)]" />
+              : <Send size={16} aria-hidden="true" className="text-[var(--btn-fg)]" />
             }
           </button>
         </div>
