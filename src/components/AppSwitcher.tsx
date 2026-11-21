@@ -25,11 +25,16 @@ export function AppSwitcher({ currentApp, userEmail }: AppSwitcherProps) {
   return (
     <div style={{ position: 'relative' }}>
       <button
+        type="button"
         onClick={() => setOpen(!open)}
+        aria-label={`Trocar de app e conta (app atual: ${current.nome})`}
+        aria-haspopup="menu"
+        aria-expanded={open}
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 6,
+          minHeight: 44,
           padding: '6px 12px',
           borderRadius: 8,
           background: 'var(--surface-2)',
@@ -50,7 +55,7 @@ export function AppSwitcher({ currentApp, userEmail }: AppSwitcherProps) {
         }}
       >
         <span>{current.nome}</span>
-        <span style={{ fontSize: 9, color: 'var(--text-2)' }}>▾</span>
+        <span aria-hidden="true" style={{ fontSize: 9, color: 'var(--text-2)' }}>▾</span>
       </button>
 
       {open && (
@@ -86,6 +91,7 @@ export function AppSwitcher({ currentApp, userEmail }: AppSwitcherProps) {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  minHeight: 44,
                   padding: '9px 10px',
                   borderRadius: 7,
                   textDecoration: 'none',
@@ -98,17 +104,19 @@ export function AppSwitcher({ currentApp, userEmail }: AppSwitcherProps) {
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
                 <span>{app.nome}</span>
-                <span style={{ color: 'var(--text-3)', fontSize: 13 }}>→</span>
+                <span aria-hidden="true" style={{ color: 'var(--text-3)', fontSize: 13 }}>→</span>
               </a>
             ))}
 
             <div style={{ borderTop: '1px solid var(--surface-3)', marginTop: 6, paddingTop: 6 }}>
               <button
+                type="button"
                 onClick={handleSignOut}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   width: '100%',
+                  minHeight: 44,
                   padding: '9px 10px',
                   borderRadius: 7,
                   background: 'transparent',

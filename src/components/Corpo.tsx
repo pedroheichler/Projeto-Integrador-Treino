@@ -177,7 +177,14 @@ export function Corpo({ session }: { session: Session }) {
       {error && (
         <div className="flex items-start gap-3 px-4 py-3 rounded-xl border border-[var(--danger)] bg-[var(--danger-soft)]">
           <p className="flex-1 text-sm text-[var(--danger)]">{error}</p>
-          <button onClick={() => setError(null)} className="text-[var(--danger)]/60 hover:text-[var(--danger)]">✕</button>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            aria-label="Fechar aviso"
+            className="-my-2 -mr-2 w-11 h-11 shrink-0 flex items-center justify-center rounded-lg text-[var(--danger)]/60 hover:text-[var(--danger)]"
+          >
+            <span aria-hidden="true">✕</span>
+          </button>
         </div>
       )}
 
@@ -261,13 +268,16 @@ export function Corpo({ session }: { session: Session }) {
             value={weightInput}
             onChange={e => setWeightInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') saveWeight(); }}
+            aria-label="Peso de hoje em quilos"
             placeholder={weights.some(w => w.date === today) ? 'Atualizar peso de hoje (kg)' : 'Peso de hoje (kg)'}
             className="flex-1 bg-[var(--surface-2)] border border-[var(--border)] rounded-xl px-4 py-3 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)] transition-colors placeholder:text-[var(--text-3)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
           <button
+            type="button"
             onClick={saveWeight}
             disabled={saving || !weightInput.trim()}
-            className="px-5 rounded-xl bg-[var(--btn-bg)] hover:bg-[var(--btn-bg-hover)] disabled:opacity-30 disabled:cursor-not-allowed text-[var(--btn-fg)] text-sm font-semibold transition-all"
+            aria-label={saving ? 'Salvando peso' : 'Salvar peso'}
+            className="min-h-[44px] px-5 rounded-xl bg-[var(--btn-bg)] hover:bg-[var(--btn-bg-hover)] disabled:opacity-30 disabled:cursor-not-allowed text-[var(--btn-fg)] text-sm font-semibold transition-all"
           >
             {saving ? '...' : 'Salvar'}
           </button>
@@ -286,10 +296,12 @@ export function Corpo({ session }: { session: Session }) {
                     {w.weight.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kg
                   </span>
                   <button
+                    type="button"
                     onClick={() => deleteWeight(w.id)}
-                    className="p-1 rounded text-transparent group-hover:text-[var(--text-3)] hover:!text-[var(--danger)] transition-all"
+                    aria-label={`Excluir registro de peso de ${new Date(w.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}`}
+                    className="-my-2 w-11 h-11 flex items-center justify-center rounded-lg text-transparent group-hover:text-[var(--text-3)] focus-visible:text-[var(--text-3)] hover:!text-[var(--danger)] transition-all"
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={12} aria-hidden="true" />
                   </button>
                 </div>
               </div>
@@ -316,9 +328,12 @@ export function Corpo({ session }: { session: Session }) {
                 : {});
               setShowMeasureForm(v => !v);
             }}
-            className="w-8 h-8 rounded-lg bg-[var(--surface-3)] hover:bg-[var(--surface-3)] text-[var(--text-2)] hover:text-[var(--text)] flex items-center justify-center transition-all"
+            type="button"
+            aria-label={showMeasureForm ? 'Fechar formulário de medidas' : 'Registrar medidas'}
+            aria-expanded={showMeasureForm}
+            className="w-11 h-11 rounded-lg bg-[var(--surface-3)] hover:bg-[var(--surface-3)] text-[var(--text-2)] hover:text-[var(--text)] flex items-center justify-center transition-all"
           >
-            <span className={showMeasureForm ? 'rotate-45 transition-transform text-lg' : 'transition-transform text-lg'}>+</span>
+            <span aria-hidden="true" className={showMeasureForm ? 'rotate-45 transition-transform text-lg' : 'transition-transform text-lg'}>+</span>
           </button>
         </div>
 
@@ -339,10 +354,11 @@ export function Corpo({ session }: { session: Session }) {
               ))}
             </div>
             <button
+              type="button"
               onClick={saveMeasures}
-              className="w-full mt-4 py-2.5 rounded-lg bg-[var(--btn-bg)] hover:bg-[var(--btn-bg-hover)] text-[var(--btn-fg)] text-sm font-semibold flex items-center justify-center gap-2 transition-all"
+              className="w-full min-h-[44px] mt-4 py-2.5 rounded-lg bg-[var(--btn-bg)] hover:bg-[var(--btn-bg-hover)] text-[var(--btn-fg)] text-sm font-semibold flex items-center justify-center gap-2 transition-all"
             >
-              <Check size={14} /> Salvar medidas de hoje
+              <Check size={14} aria-hidden="true" /> Salvar medidas de hoje
             </button>
           </div>
         )}

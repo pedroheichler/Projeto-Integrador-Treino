@@ -44,22 +44,23 @@ export function Login() {
         </div>
 
         {modo === 'cadastrar' && (
-          <input value={nome} onChange={e => setNome(e.target.value)} placeholder="Seu nome" style={inputStyle} />
+          <input value={nome} onChange={e => setNome(e.target.value)} placeholder="Seu nome"
+            aria-label="Seu nome" autoComplete="name" style={inputStyle} />
         )}
         <input value={email} onChange={e => setEmail(e.target.value)} placeholder="E-mail"
-          type="email" autoComplete="email" style={inputStyle} />
+          aria-label="E-mail" type="email" autoComplete="email" style={inputStyle} />
         <input value={senha} onChange={e => setSenha(e.target.value)} placeholder="Senha"
-          type="password" autoComplete={modo === 'entrar' ? 'current-password' : 'new-password'} style={inputStyle} />
+          aria-label="Senha" type="password" autoComplete={modo === 'entrar' ? 'current-password' : 'new-password'} style={inputStyle} />
 
-        {erro && <p style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 12 }}>{erro}</p>}
+        {erro && <p role="alert" style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 12 }}>{erro}</p>}
 
         <button type="submit" disabled={loading}
-          style={{ width: '100%', padding: 14, background: 'var(--btn-bg)', border: 'none', borderRadius: 8, color: 'var(--btn-fg)', fontWeight: 600, cursor: 'pointer', fontSize: 15, opacity: loading ? 0.6 : 1 }}>
+          style={{ width: '100%', minHeight: 44, padding: 14, background: 'var(--btn-bg)', border: 'none', borderRadius: 8, color: 'var(--btn-fg)', fontWeight: 600, cursor: 'pointer', fontSize: 15, opacity: loading ? 0.6 : 1 }}>
           {loading ? 'Aguarde...' : modo === 'entrar' ? 'Entrar' : 'Criar conta'}
         </button>
 
         <button type="button" onClick={() => { setModo(modo === 'entrar' ? 'cadastrar' : 'entrar'); setErro(''); }}
-          style={{ width: '100%', marginTop: 16, background: 'none', border: 'none', color: 'var(--text-2)', cursor: 'pointer', fontSize: 13 }}>
+          style={{ width: '100%', minHeight: 44, marginTop: 16, background: 'none', border: 'none', color: 'var(--text-2)', cursor: 'pointer', fontSize: 13 }}>
           {modo === 'entrar' ? 'Não tem conta? Cadastre-se' : 'Já tem conta? Entrar'}
         </button>
       </form>
