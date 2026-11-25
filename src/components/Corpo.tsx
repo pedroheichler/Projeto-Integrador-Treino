@@ -43,6 +43,16 @@ export function Corpo({ session }: { session: Session }) {
 
   const [weightInput, setWeightInput] = useState('');
   const [saving, setSaving] = useState(false);
+  // Excluir um peso pede um segundo toque: no celular não há "passar o mouse",
+  // e um toque sem querer não pode apagar o registro
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // A confirmação some sozinha se a pessoa não tocar de novo
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    const timer = setTimeout(() => setConfirmDeleteId(null), 4000);
+    return () => clearTimeout(timer);
+  }, [confirmDeleteId]);
 
   const [showMeasureForm, setShowMeasureForm] = useState(false);
   const [measureDraft, setMeasureDraft] = useState<Record<string, string>>({});
@@ -150,6 +160,7 @@ export function Corpo({ session }: { session: Session }) {
   };
 
   const deleteWeight = async (id: string) => {
+    setConfirmDeleteId(null);
     const removed = weights.find(w => w.id === id);
     setWeights(prev => prev.filter(w => w.id !== id));
     const { error: delErr } = await api
@@ -286,26 +297,41 @@ export function Corpo({ session }: { session: Session }) {
         {/* Últimos registros */}
         {weights.length > 0 && (
           <div className="mt-4 pt-4 border-t border-[var(--border)] space-y-1">
-            {[...weights].reverse().slice(0, 5).map(w => (
-              <div key={w.id} className="group flex items-center justify-between py-1.5">
-                <span className="text-[12px] text-[var(--text-2)] capitalize">
-                  {new Date(w.date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' })}
-                </span>
-                <div className="flex items-center gap-2">
-                  <span className="text-[13px] font-semibold text-[var(--text)] tabular-nums">
-                    {w.weight.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kg
+            {[...weights].reverse().slice(0, 5).map(w => {
+              const day = new Date(w.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' });
+              const confirming = confirmDeleteId === w.id;
+              return (
+                <div key={w.id} className="flex items-center justify-between py-1.5">
+                  <span className="text-[12px] text-[var(--text-2)] capitalize">
+                    {new Date(w.date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' })}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => deleteWeight(w.id)}
-                    aria-label={`Excluir registro de peso de ${new Date(w.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}`}
-                    className="-my-2 w-11 h-11 flex items-center justify-center rounded-lg text-transparent group-hover:text-[var(--text-3)] focus-visible:text-[var(--text-3)] hover:!text-[var(--danger)] transition-all"
-                  >
-                    <Trash2 size={12} aria-hidden="true" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-semibold text-[var(--text)] tabular-nums">
+                      {w.weight.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kg
+                    </span>
+                    {confirming ? (
+                      <button
+                        type="button"
+                        onClick={() => deleteWeight(w.id)}
+                        aria-label={`Confirmar exclusão do peso de ${day}`}
+                        className="-my-2 min-h-11 px-3 rounded-lg text-xs font-semibold text-[var(--btn-fg)] bg-[var(--danger)] transition-all"
+                      >
+                        Excluir?
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteId(w.id)}
+                        aria-label={`Excluir registro de peso de ${day}`}
+                        className="-my-2 w-11 h-11 flex items-center justify-center rounded-lg text-[var(--text-3)] hover:text-[var(--danger)] hover:bg-[var(--danger-soft)] transition-all"
+                      >
+                        <Trash2 size={13} aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
