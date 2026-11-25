@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../services/api';
+import { ML_POR_KG, DEFAULT_WATER_GOAL, suggestedWaterGoal, effectiveWaterGoal } from '../services/waterGoal';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Droplets,
@@ -28,14 +29,6 @@ import type { DietaTab } from '../types';
 // "YYYY-MM-DD" no fuso local
 function localDateStr(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-/** RN03: meta de água sugerida = 35 ml por kg de peso corporal */
-const ML_POR_KG = 35;
-const DEFAULT_WATER_GOAL = 2000;
-function suggestedWaterGoal(weightKg: number | null): number | null {
-  if (weightKg == null || !Number.isFinite(weightKg) || weightKg <= 0) return null;
-  return Math.round((weightKg * ML_POR_KG) / 10) * 10;
 }
 
 function formatMl(ml: number): string {
@@ -89,7 +82,7 @@ interface DietaProps {
 export function Dieta({ session, tab: dietTab, onTabChange: setDietTab }: DietaProps) {
   // ── Hidratação ──
   const [waterEntries, setWaterEntries] = useState<WaterEntry[]>([]);
-  // Meta salva manualmente (diet_settings.water_goal_ml); null = nunca salvou
+  // Meta definida pela pessoa (diet_settings.water_goal_ml); null = automática pelo peso
   const [manualWaterGoal, setManualWaterGoal] = useState<number | null>(null);
   // Peso mais recente registrado na aba Corpo (body_weight)
   const [latestWeight, setLatestWeight] = useState<number | null>(null);
@@ -245,7 +238,7 @@ export function Dieta({ session, tab: dietTab, onTabChange: setDietTab }: DietaP
 
   const suggestedGoal = suggestedWaterGoal(latestWeight);
   // Prioridade: meta manual > sugestão pelo peso > 2000 ml
-  const waterGoal = manualWaterGoal ?? suggestedGoal ?? DEFAULT_WATER_GOAL;
+  const waterGoal = effectiveWaterGoal(manualWaterGoal, latestWeight);
 
   // ── Derivados ──
   const waterToday = useMemo(
@@ -345,17 +338,32 @@ export function Dieta({ session, tab: dietTab, onTabChange: setDietTab }: DietaP
     }
   };
 
-  const saveWaterGoal = async () => {
-    const goal = Math.max(500, Number(waterGoalInput) || suggestedGoal || DEFAULT_WATER_GOAL);
+  // null = volta para a meta automática, que acompanha o peso (RN03)
+  const persistWaterGoal = async (goal: number | null) => {
+    const previous = manualWaterGoal;
     setManualWaterGoal(goal);
-    setEditingWaterGoal(false);
     const { error: upErr } = await api
       .from('diet_settings')
       .upsert({ user_id: session.user.id, water_goal_ml: goal, calorie_goal: calorieGoal, protein_goal: proteinGoal });
     if (upErr) {
       console.error('Erro ao salvar meta de água:', upErr);
+      setManualWaterGoal(previous);
       setError(`Não foi possível salvar a meta: ${upErr.message}`);
     }
+  };
+
+  const saveWaterGoal = async () => {
+    const typed = Number(waterGoalInput);
+    setEditingWaterGoal(false);
+    // Abriu e confirmou sem mudar o valor: a meta automática continua
+    // automática, em vez de virar uma meta fixa que não acompanha mais o peso
+    if (manualWaterGoal == null && (!typed || typed === waterGoal)) return;
+    await persistWaterGoal(Math.max(500, typed || waterGoal));
+  };
+
+  const useAutomaticWaterGoal = async () => {
+    setEditingWaterGoal(false);
+    await persistWaterGoal(null);
   };
 
   // ── Ações: refeições ──
@@ -741,44 +749,57 @@ export function Dieta({ session, tab: dietTab, onTabChange: setDietTab }: DietaP
                 <Droplets size={16} className="text-[var(--accent)]" /> Hidratação
               </h3>
               <p className="text-xs text-[var(--text-2)] mt-0.5">Meta diária de água</p>
-              {suggestedGoal != null ? (
+              {manualWaterGoal == null ? (
                 <p className="text-[11px] text-[var(--text-3)] mt-1">
-                  Sugerido: {suggestedGoal.toLocaleString('pt-BR')} ml ({ML_POR_KG} ml/kg)
-                  {manualWaterGoal != null && manualWaterGoal !== suggestedGoal && (
-                    <button
-                      type="button"
-                      onClick={() => { setWaterGoalInput(String(suggestedGoal)); setEditingWaterGoal(true); }}
-                      className="ml-2 underline hover:text-[var(--text)]"
-                    >
-                      usar sugestão
-                    </button>
-                  )}
+                  {suggestedGoal != null
+                    ? `Automática: ${ML_POR_KG} ml por kg do seu peso`
+                    : `Registre seu peso na aba Corpo e a meta passa a acompanhar o peso (${ML_POR_KG} ml/kg)`}
                 </p>
               ) : (
-                <p className="text-[11px] text-[var(--text-2)] mt-1">
-                  Registre seu peso na aba Corpo para uma meta sugerida ({ML_POR_KG} ml/kg)
-                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-[var(--text-3)]">
+                  <span>
+                    Definida por você
+                    {suggestedGoal != null && ` · pelo peso seria ${suggestedGoal.toLocaleString('pt-BR')} ml`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={useAutomaticWaterGoal}
+                    className="min-h-11 underline text-[var(--text-2)] hover:text-[var(--text)]"
+                  >
+                    Usar meta automática
+                  </button>
+                </div>
               )}
             </div>
             {editingWaterGoal ? (
               <div className="flex items-center gap-2">
                 <input
                   type="number"
+                  inputMode="numeric"
+                  autoFocus
+                  aria-label="Meta diária de água em ml"
                   value={waterGoalInput}
                   onChange={e => setWaterGoalInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') saveWaterGoal();
+                    if (e.key === 'Escape') setEditingWaterGoal(false);
+                  }}
                   className="w-20 bg-[var(--surface-3)] border border-[var(--border-strong)] rounded-lg px-2 py-1.5 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
                 <span className="text-[10px] text-[var(--text-2)]">ml</span>
-                <button onClick={saveWaterGoal} className="p-1.5 bg-[var(--btn-bg)] rounded-lg text-[var(--btn-fg)]">
-                  <Check size={13} />
+                <button type="button" onClick={saveWaterGoal} aria-label="Salvar meta de água"
+                  className="w-11 h-11 flex items-center justify-center bg-[var(--btn-bg)] rounded-lg text-[var(--btn-fg)]">
+                  <Check size={14} aria-hidden="true" />
                 </button>
               </div>
             ) : (
               <button
+                type="button"
                 onClick={() => { setWaterGoalInput(String(waterGoal)); setEditingWaterGoal(true); }}
-                className="flex items-center gap-1.5 text-xs text-[var(--text-2)] hover:text-[var(--text)] bg-[var(--surface-3)] px-3 py-1.5 rounded-lg transition-all"
+                aria-label={`Meta: ${formatMl(waterGoal)}. Alterar meta de água`}
+                className="min-h-11 flex items-center gap-1.5 text-xs text-[var(--text-2)] hover:text-[var(--text)] bg-[var(--surface-3)] px-3 py-1.5 rounded-lg transition-all"
               >
-                Meta: {formatMl(waterGoal)} <Pencil size={11} />
+                Meta: {formatMl(waterGoal)} <Pencil size={11} aria-hidden="true" />
               </button>
             )}
           </div>
