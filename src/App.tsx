@@ -23,7 +23,6 @@ import {
   WifiOff,
   SkipForward,
 } from 'lucide-react';
-import { AppSwitcher } from './components/AppSwitcher';
 import { Login } from './components/Login';
 import { motion, AnimatePresence } from 'motion/react';
 import { Squad, ViewType, TreinoTab, DietaTab, Exercise } from './types';
@@ -1416,7 +1415,6 @@ useEffect(() => {
               >
                 {theme === 'noite' ? <Sun size={16} /> : <Moon size={16} />}
               </button>
-              <AppSwitcher currentApp="treino" userEmail={session?.user?.email} />
             </div>
           </header>
 
