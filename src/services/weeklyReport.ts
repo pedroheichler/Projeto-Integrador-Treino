@@ -1,5 +1,6 @@
 import { api } from './api';
 import { callAI, type AITextBlock } from './anthropicProxy';
+import { effectiveWaterGoal } from './waterGoal';
 
 /**
  * Resumo semanal: junta treino, dieta, água e peso da última semana e pede
@@ -33,7 +34,7 @@ export async function collectWeekFacts(userId: string): Promise<WeekFacts> {
   const prevTo = localDateStr(new Date(today.getTime() - 7 * 86400000));
   const to = localDateStr(today);
 
-  const [prog, prevProg, water, settings, diet, weight, logs] = await Promise.all([
+  const [prog, prevProg, water, settings, diet, weight, latestWeight, logs] = await Promise.all([
     api.from('exercise_progress').select('date')
       .eq('user_id', userId).eq('completed', true).gte('date', from).lte('date', to),
     api.from('exercise_progress').select('date')
@@ -44,6 +45,10 @@ export async function collectWeekFacts(userId: string): Promise<WeekFacts> {
     api.rpc('diet_daily_totals', { p_from: from, p_to: to }),
     api.from('body_weight').select('date, weight')
       .eq('user_id', userId).gte('date', prevFrom).order('date', { ascending: true }),
+    // Peso mais recente de qualquer data: é ele que define a meta de água (RN03),
+    // igual à tela de Dieta, mesmo que a pessoa não tenha se pesado nestas duas semanas
+    api.from('body_weight').select('weight')
+      .eq('user_id', userId).order('date', { ascending: false }).limit(1),
     api.from('set_logs').select('exercise_id, date, weight, exercises(name)')
       .eq('user_id', userId).not('weight', 'is', null).gte('date', prevFrom).lte('date', to),
   ]);
@@ -62,8 +67,8 @@ export async function collectWeekFacts(userId: string): Promise<WeekFacts> {
   const weights = (weight.data ?? []).map((r: any) => ({ date: r.date, w: Number(r.weight) }));
   const pesoAtual = weights.length ? weights[weights.length - 1].w : null;
   // RN03: sem meta manual, usa 35 ml × peso mais recente (ou 2000 ml sem peso)
-  const waterGoal = settings.data?.water_goal_ml
-    ?? (pesoAtual ? Math.round((pesoAtual * 35) / 10) * 10 : 2000);
+  const ultimoPeso = (latestWeight.data ?? [])[0] as { weight: number | string } | undefined;
+  const waterGoal = effectiveWaterGoal(settings.data?.water_goal_ml, ultimoPeso ? Number(ultimoPeso.weight) : null);
   const diasComMetaAgua = Object.values(perDay).filter(ml => ml >= waterGoal).length;
   const pesoVariacao = weights.length >= 2 ? weights[weights.length - 1].w - weights[0].w : null;
 

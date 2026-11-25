@@ -72,13 +72,13 @@ function SquadSetup({ onComplete }: { onComplete: () => void }) {
           <button onClick={() => setModo('criar')}
             className="p-5 bg-[var(--surface)] border border-[var(--surface-3)] hover:border-[var(--accent)] rounded-xl text-left transition-colors"
           >
-            <div className="text-sm font-semibold text-[var(--btn-fg)] mb-1">💪 Criar um novo squad</div>
+            <div className="text-sm font-semibold text-[var(--text)] mb-1">💪 Criar um novo squad</div>
             <div className="text-xs text-[var(--text-2)]">Você será o admin e poderá convidar membros</div>
           </button>
           <button onClick={() => setModo('entrar')}
             className="p-5 bg-[var(--surface)] border border-[var(--surface-3)] hover:border-[var(--accent)] rounded-xl text-left transition-colors"
           >
-            <div className="text-sm font-semibold text-[var(--btn-fg)] mb-1">🔑 Entrar em um squad</div>
+            <div className="text-sm font-semibold text-[var(--text)] mb-1">🔑 Entrar em um squad</div>
             <div className="text-xs text-[var(--text-2)]">Use o código de convite que recebeu</div>
           </button>
         </div>
@@ -89,7 +89,7 @@ function SquadSetup({ onComplete }: { onComplete: () => void }) {
           <button onClick={() => { setModo('escolha'); setErro(''); }} className="text-xs text-[var(--text-2)] hover:text-[var(--text)] mb-4 block">← Voltar</button>
           <label htmlFor="novo-squad-nome" className="block text-xs font-bold text-[var(--text-2)] uppercase tracking-widest mb-2">Nome do squad</label>
           <input id="novo-squad-nome" value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Os Brutos do CT"
-            className="w-full bg-[var(--surface-3)] border-none rounded-xl px-4 py-3 text-sm text-[var(--btn-fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] mb-4" />
+            className="w-full bg-[var(--surface-3)] border-none rounded-xl px-4 py-3 text-sm text-[var(--text)] outline-none focus:ring-2 focus:ring-[var(--accent)] mb-4" />
           {erro && <p role="alert" className="text-[var(--danger)] text-xs mb-3">{erro}</p>}
           <button onClick={criarSquad} disabled={loading}
             className="w-full bg-[var(--accent)] hover:bg-[var(--btn-bg-hover)] disabled:opacity-60 text-[var(--btn-fg)] py-3 rounded-xl text-sm font-semibold transition-all">
@@ -103,7 +103,7 @@ function SquadSetup({ onComplete }: { onComplete: () => void }) {
           <button onClick={() => { setModo('escolha'); setErro(''); }} className="text-xs text-[var(--text-2)] hover:text-[var(--text)] mb-4 block">← Voltar</button>
           <label htmlFor="entrar-squad-codigo" className="block text-xs font-bold text-[var(--text-2)] uppercase tracking-widest mb-2">Código de convite</label>
           <input id="entrar-squad-codigo" value={codigo} onChange={e => setCodigo(e.target.value)} placeholder="Ex: ABC123"
-            className="w-full bg-[var(--surface-3)] border-none rounded-xl px-4 py-3 text-sm text-[var(--btn-fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] mb-4 uppercase tracking-widest" />
+            className="w-full bg-[var(--surface-3)] border-none rounded-xl px-4 py-3 text-sm text-[var(--text)] outline-none focus:ring-2 focus:ring-[var(--accent)] mb-4 uppercase tracking-widest" />
           {erro && <p role="alert" className="text-[var(--danger)] text-xs mb-3">{erro}</p>}
           <button onClick={entrarSquad} disabled={loading}
             className="w-full bg-[var(--accent)] hover:bg-[var(--btn-bg-hover)] disabled:opacity-60 text-[var(--btn-fg)] py-3 rounded-xl text-sm font-semibold transition-all">
@@ -262,6 +262,14 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
     onMemberRemoved(memberId);
   };
 
+  // Sair da conta: recarrega do zero para não sobrar nada do usuário anterior
+  const [signingOut, setSigningOut] = useState(false);
+  const signOut = async () => {
+    setSigningOut(true);
+    await api.auth.signOut();
+    window.location.href = window.location.pathname;
+  };
+
   const saveProfile = async () => {
     setProfileStatus('saving');
     const { error } = await api
@@ -389,7 +397,7 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
               value={displayName}
               onChange={e => setDisplayName(e.target.value)}
               placeholder="Seu nome"
-              className="w-full bg-[var(--surface-3)] border-none rounded-xl px-4 py-3 text-sm text-[var(--btn-fg)] outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              className="w-full bg-[var(--surface-3)] border-none rounded-xl px-4 py-3 text-sm text-[var(--text)] outline-none focus:ring-2 focus:ring-[var(--accent)]"
             />
           </div>
 
@@ -400,6 +408,22 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
               className="bg-[var(--accent)] hover:bg-[var(--btn-bg-hover)] disabled:opacity-60 text-[var(--btn-fg)] px-6 py-2 rounded-xl text-sm font-semibold transition-all"
             >
               {profileStatus === 'saving' ? 'Salvando...' : profileStatus === 'saved' ? 'Salvo!' : profileStatus === 'error' ? 'Erro!' : 'Salvar'}
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 pt-5 border-t border-[var(--border)]">
+            <div>
+              <p className="text-sm font-semibold text-[var(--text)]">Sair da conta</p>
+              <p className="text-xs text-[var(--text-2)] mt-0.5">Seus dados continuam salvos para quando você entrar de novo.</p>
+            </div>
+            <button
+              type="button"
+              onClick={signOut}
+              disabled={signingOut}
+              className="min-h-11 shrink-0 inline-flex items-center gap-2 px-4 rounded-xl text-sm font-semibold border border-[var(--border-strong)] text-[var(--text)] hover:bg-[var(--surface-3)] transition-all disabled:opacity-60"
+            >
+              <LogOut size={15} aria-hidden="true" />
+              {signingOut ? 'Saindo...' : 'Sair'}
             </button>
           </div>
         </div>
@@ -458,7 +482,7 @@ export function Settings({ session, squad, isPersonal, theme, onToggleTheme, onS
                 value={squadName}
                 onChange={e => setSquadName(e.target.value)}
                 placeholder="Nome do squad"
-                className="w-full bg-[var(--surface-3)] border-none rounded-xl px-4 py-3 text-sm text-[var(--btn-fg)] outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                className="w-full bg-[var(--surface-3)] border-none rounded-xl px-4 py-3 text-sm text-[var(--text)] outline-none focus:ring-2 focus:ring-[var(--accent)]"
               />
             </div>
 
